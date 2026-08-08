@@ -25,11 +25,11 @@ export function Rail({
   return (
     <nav
       aria-label="Members"
-      className="flex w-50 shrink-0 flex-col gap-0.5 bg-rail py-3.5 text-[#f2f2f0]"
+      className="flex w-50 min-h-0 shrink-0 flex-col gap-0.5 overflow-y-auto bg-rail py-3.5 text-[#f2f2f0]"
     >
       <div className="flex items-baseline justify-between px-3.5 pb-2.5">
-        <span className="disp text-[0.9375rem]">Members</span>
-        <span className="font-mono text-[0.625rem] text-rail-dim">{members.length}</span>
+        <span className="disp text-lead">Members</span>
+        <span className="font-mono text-micro text-rail-dim">{members.length}</span>
       </div>
 
       <ul className="flex flex-col">
@@ -50,17 +50,17 @@ export function Rail({
               >
                 <span
                   className={cn(
-                    "grid size-7 place-items-center rounded-[4px] text-[0.625rem]",
+                    "grid size-7 place-items-center rounded-[4px] text-micro",
                     active ? "bg-cobalt text-white" : "bg-rail-chip text-[#d6d6da]",
                   )}
                 >
                   {m.initials}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[0.8125rem] font-semibold -tracking-[0.01em]">
+                  <span className="block truncate text-body font-semibold -tracking-[0.01em]">
                     {m.name}
                   </span>
-                  <span className="flex items-center gap-1.5 font-mono text-[0.5938rem] text-rail-dim">
+                  <span className="flex items-center gap-1.5 font-mono text-micro text-rail-dim">
                     {m.needs_attention && (
                       <i aria-hidden className="size-[5px] shrink-0 rounded-full bg-red" />
                     )}

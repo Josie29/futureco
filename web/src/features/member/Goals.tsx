@@ -26,7 +26,7 @@ export function Goals({ goals }: { goals: Goal[] }) {
       <div className="mb-2 flex items-baseline gap-2">
         <h2 className="text-xs font-bold -tracking-[0.005em]">Goals</h2>
         {nextQuarter > 0 && (
-          <span className="ml-auto text-[0.6875rem] whitespace-nowrap text-faint">
+          <span className="ml-auto text-micro whitespace-nowrap text-faint">
             {nextQuarter} due within four months
           </span>
         )}
@@ -64,12 +64,12 @@ export function Goals({ goals }: { goals: Goal[] }) {
 
               <div
                 className={cn(
-                  "text-right font-mono text-[0.625rem] leading-snug whitespace-nowrap",
+                  "text-right font-mono text-micro leading-snug whitespace-nowrap",
                   urgent ? "text-red" : "text-dim",
                 )}
               >
                 {g.days_left !== null ? `${g.days_left} days` : (g.shortfall ?? "on track")}
-                <span className="block text-[0.5625rem] text-faint">
+                <span className="block text-micro text-faint">
                   {g.target_date ? formatShortDate(g.target_date) : "no date"}
                 </span>
               </div>

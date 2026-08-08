@@ -3,75 +3,65 @@ import { cn } from "@/lib/utils"
 import type { SessionRecord } from "@/types"
 
 /**
- * Session history, scrolling horizontally so it extends past four without
- * eating the page. Border colour is the only signal and it carries meaning:
- * grey completed, red skipped, dashed cobalt for the one being built.
+ * Session history, newest first.
+ *
+ * Was a horizontal scroller of narrow cards: four columns of stacked text at
+ * 6.75rem each, a gradient mask, and a fifth placeholder card for today. It
+ * held less than this does and read as clutter. A plain aligned list puts the
+ * dates in one column and the outcomes in another, so "she trained short and
+ * skipped the long one" is legible at a glance — which is the whole reason a
+ * coach looks at this before programming Thursday.
  */
-export function RecentSessions({
-  sessions,
-  todayLabel,
-  building,
-}: {
-  sessions: SessionRecord[]
-  todayLabel: string
-  building: boolean
-}) {
+export function RecentSessions({ sessions }: { sessions: SessionRecord[] }) {
   const done = sessions.filter((s) => s.completed).length
+  const newestFirst = [...sessions].sort((a, b) => b.date.localeCompare(a.date))
 
   return (
     <section>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="text-xs font-bold -tracking-[0.005em]">Previous sessions</h2>
-        <span className="ml-auto text-[0.6875rem] whitespace-nowrap text-faint">
-          {done} of {sessions.length} done
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <h2 className="text-meta font-bold -tracking-[0.005em]">Previous sessions</h2>
+        <span className="ml-auto text-micro whitespace-nowrap text-faint">
+          {done} of {sessions.length} completed
         </span>
       </div>
 
-      {/* The fade tells a clipped card apart from a rendering error. */}
-      <div className="relative min-w-0">
-        <ul className="flex gap-3.5 overflow-x-auto pb-1">
-          {sessions.map((s) => (
-            <li
-              key={s.date}
+      <ul>
+        {newestFirst.map((session) => (
+          <li
+            key={session.date}
+            className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-baseline gap-3 border-t border-line py-1.5 first:border-t-0"
+          >
+            <span className="text-micro whitespace-nowrap text-faint">
+              {formatSessionDay(session.date)}
+            </span>
+
+            <span
               className={cn(
-                "flex w-27 shrink-0 flex-col gap-px border-l-2 pl-2",
-                s.completed ? "border-l-line" : "border-l-red",
+                "truncate text-meta font-semibold -tracking-[0.01em]",
+                !session.completed && "text-dim",
               )}
             >
-              <span className="font-mono text-[0.5938rem] whitespace-nowrap text-faint">
-                {formatSessionDay(s.date)}
-              </span>
-              <span className="truncate text-[0.6875rem] font-semibold -tracking-[0.01em]">
-                {s.title}
-              </span>
-              <span
-                className={cn(
-                  "font-mono text-[0.5938rem] whitespace-nowrap",
-                  s.completed ? "text-dim" : "text-red",
-                )}
-              >
-                {s.completed ? `${s.duration_min} min · rpe ${s.rpe}` : "skipped"}
-              </span>
-            </li>
-          ))}
+              {session.title}
+            </span>
 
-          <li className="flex w-27 shrink-0 flex-col gap-px border-l-2 border-dashed border-l-cobalt pl-2">
-            <span className="font-mono text-[0.5938rem] whitespace-nowrap text-faint">
-              {todayLabel}
-            </span>
-            <span className="truncate text-[0.6875rem] font-semibold -tracking-[0.01em]">
-              Today
-            </span>
-            <span className="font-mono text-[0.5938rem] whitespace-nowrap text-cobalt">
-              {building ? "building" : "not built"}
+            <span
+              className={cn(
+                "text-micro whitespace-nowrap",
+                session.completed ? "text-dim" : "font-semibold text-red",
+              )}
+            >
+              {session.completed ? (
+                <>
+                  <span className="num text-meta text-ink">{session.duration_min}</span> min
+                  {session.rpe !== null && ` · RPE ${session.rpe}`}
+                </>
+              ) : (
+                "skipped"
+              )}
             </span>
           </li>
-        </ul>
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-r from-transparent to-ground"
-        />
-      </div>
+        ))}
+      </ul>
     </section>
   )
 }

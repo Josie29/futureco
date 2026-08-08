@@ -29,20 +29,25 @@ function Metric({
   label,
   note,
   alert = false,
+  title,
   children,
 }: {
   label: string
   note: string
   alert?: boolean
+  title?: string
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-px px-4 first:pl-0 not-first:border-l not-first:border-line">
-      <span className="text-[0.625rem] whitespace-nowrap text-faint">{label}</span>
-      <span className={cn("text-base leading-tight whitespace-nowrap", alert && "text-red")}>
+    <div
+      title={title}
+      className="flex min-w-0 flex-col gap-px px-4 first:pl-0 not-first:border-l not-first:border-line"
+    >
+      <span className="text-micro whitespace-nowrap text-faint">{label}</span>
+      <span className={cn("text-lead leading-tight whitespace-nowrap", alert && "text-red")}>
         {children}
       </span>
-      <span className={cn("text-[0.625rem] whitespace-nowrap text-faint", alert && "text-red")}>
+      <span className={cn("text-micro whitespace-nowrap text-faint", alert && "text-red")}>
         {note}
       </span>
     </div>
@@ -50,24 +55,28 @@ function Metric({
 }
 
 /**
- * The member intro. The metric strip carries the four things a coach opens
+ * The member intro. The metric strip carries the five things a coach opens
  * with — and deliberately no boxes: white is reserved for surfaces you act on.
+ *
+ * Churn risk sits here rather than only inside a copilot paragraph, because a
+ * sentence in a thread scrolls away and a risk level shouldn't.
  */
 export function MemberHeader({ member }: { member: MemberContext }) {
   const injury = member.injuries[0]
   const adherence = member.adherence_pct
   const latest = adherence.at(-1)
   const first = adherence[0]
+  const atRisk = member.churn_risk.level !== "low"
 
   return (
     <header>
       <div className="flex items-center gap-3">
-        <span className="disp grid size-10 shrink-0 place-items-center rounded-[4px] bg-cobalt text-sm text-white">
+        <span className="disp grid size-10 shrink-0 place-items-center rounded-[4px] bg-cobalt text-body text-white">
           {member.initials}
         </span>
         <div>
           <h1 className="disp text-2xl leading-tight">{member.name}</h1>
-          <p className="mt-px text-xs text-dim">
+          <p className="mt-px text-meta text-dim">
             {member.age} · {member.tier} · trains at {member.trains_at}
           </p>
         </div>
@@ -75,18 +84,34 @@ export function MemberHeader({ member }: { member: MemberContext }) {
 
       <div className="mt-2 flex items-stretch">
         {injury && (
-          <Metric label="Injury" note={`${injury.status} · ${injury.severity}`} alert>
-            <span className="disp text-[0.9375rem]">
+          <Metric
+            label="Injury"
+            note={`${injury.status} · ${injury.severity}`}
+            title={injury.notes}
+            alert
+          >
+            <span className="disp text-lead">
               {injury.region[0].toUpperCase() + injury.region.slice(1)}
             </span>
           </Metric>
         )}
 
+        <Metric
+          label="Churn risk"
+          note={`${member.churn_risk.reasons.length} signals`}
+          title={member.churn_risk.reasons.join(". ")}
+          alert={atRisk}
+        >
+          <span className="disp text-lead">
+            {member.churn_risk.level[0].toUpperCase() + member.churn_risk.level.slice(1)}
+          </span>
+        </Metric>
+
         <Metric label="Adherence" note={first !== undefined ? `down from ${first}` : ""}>
           <span className="flex items-center gap-1.5">
             <span className="num text-red">
               {latest}
-              <small className="text-[0.6875rem] font-medium text-dim">%</small>
+              <small className="text-micro font-medium text-dim">%</small>
             </span>
             <AdherenceSpark points={adherence} />
           </span>
@@ -95,7 +120,7 @@ export function MemberHeader({ member }: { member: MemberContext }) {
         <Metric label="This week" note="sessions done">
           <span className="num">
             {member.sessions_done_this_week}
-            <small className="text-[0.6875rem] font-medium text-dim">
+            <small className="text-micro font-medium text-dim">
               {" "}
               / {member.sessions_planned_this_week}
             </small>
@@ -103,13 +128,10 @@ export function MemberHeader({ member }: { member: MemberContext }) {
         </Metric>
 
         {member.typical_session_min !== null && (
-          <Metric
-            label="Typical session"
-            note={`she asks for ${member.preferred_session_min}`}
-          >
+          <Metric label="Typical session" note={`she asks for ${member.preferred_session_min}`}>
             <span className="num">
               {member.typical_session_min}
-              <small className="text-[0.6875rem] font-medium text-dim"> min</small>
+              <small className="text-micro font-medium text-dim"> min</small>
             </span>
           </Metric>
         )}

@@ -1,58 +1,123 @@
-import { useMemo, useState } from "react"
-import { computeEligibility } from "@/api/mock"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { getEligibility } from "@/api/client"
 import { equipmentLabel } from "@/components/Tag"
 import { cn } from "@/lib/utils"
 import {
-  ConstraintKind,
+  ConstraintEffect,
+  FilterCause,
   type Constraint,
   type MemberContext,
   type PlanRequest,
 } from "@/types"
 
-/** Equipment items read better in program-sheet shorthand than title case. */
-function itemLabel(kind: ConstraintKind, item: string): string {
-  return kind === ConstraintKind.EQUIPMENT ? equipmentLabel(item) : item
+/**
+ * The three at ASSESSMENT.md:27-31, plus two that exercise other paths. They
+ * are here because the prompt is the only way to state intent, so a coach
+ * meeting the console for the first time needs to see what it accepts.
+ */
+const EXAMPLES = [
+  "Full-body session with isolation work around the pecs",
+  "Lower body, but her left knee is bothering her",
+  "Upper-body push and pull — no barbell, only dumbbells and a kettlebell",
+  "Posterior chain and glutes, exclude deadlifts",
+  "Low-impact conditioning and core, nothing with jumping",
+] as const
+
+/**
+ * One switchable fact, as a real switch.
+ *
+ * A locked item still renders — a coach needs to see that the knee is being
+ * accounted for — but it has no control, because there is no version of this
+ * screen where switching an injury off is a thing a coach can do.
+ */
+function ItemToggle({
+  label,
+  effect,
+  locked,
+  on,
+  onToggle,
+}: {
+  label: string
+  effect: string
+  locked: boolean
+  on: boolean
+  onToggle: () => void
+}) {
+  if (locked) {
+    return (
+      <span
+        title={effect}
+        className="inline-flex items-center gap-1.5 rounded-full border border-red bg-red-wash py-[0.1875rem] pr-2.5 pl-2 text-micro text-red"
+      >
+        <i aria-hidden className="size-1.5 rounded-full bg-red" />
+        {label}
+        <span className="text-micro opacity-70">always on</span>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      title={effect}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border py-[0.1875rem] pr-2.5 pl-2 text-micro",
+        on ? "border-ink text-ink" : "border-line text-faint line-through decoration-line",
+      )}
+    >
+      <i
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full",
+          on ? "bg-cobalt" : "border border-faint bg-transparent",
+        )}
+      />
+      {label}
+    </button>
+  )
 }
 
-function ConstraintDetail({
+function ConstraintGroup({
   constraint,
-  lifted,
+  disabled,
   onToggle,
 }: {
   constraint: Constraint
-  lifted: boolean
-  onToggle: () => void
+  disabled: string[]
+  onToggle: (id: string) => void
 }) {
-  return (
-    <div
-      className={cn(
-        "mt-2 flex flex-col gap-1.5 border-l-2 pl-2.5",
-        constraint.liftable ? "border-l-line" : "border-l-red",
-      )}
-    >
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-semibold">
-          {constraint.items.length > 0
-            ? constraint.items.map((i) => itemLabel(constraint.kind, i)).join(" · ")
-            : `No ${constraint.label.toLowerCase()} on file`}
-        </span>
+  if (constraint.items.length === 0) return null
 
-        {constraint.liftable ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            className="shrink-0 text-[0.625rem] whitespace-nowrap text-dim underline underline-offset-2 hover:text-ink"
-          >
-            {lifted ? "Apply again" : "Lift for this session"}
-          </button>
-        ) : (
-          <span className="shrink-0 text-[0.625rem] whitespace-nowrap text-faint">
-            can't be lifted
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <h3 className="text-micro font-semibold text-ink">{constraint.label}</h3>
+        <p className="text-micro text-dim">{constraint.summary}</p>
+        {/* Says up front whether switching anything here moves the count, so a
+            ranking-only group doesn't read as a broken control. */}
+        {constraint.effect === ConstraintEffect.RANKING && (
+          <span className="ml-auto shrink-0 text-micro whitespace-nowrap text-faint">
+            preference only
           </span>
         )}
       </div>
 
-      <p className="text-[0.6875rem] text-dim">{constraint.effect}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {constraint.items.map((item) => (
+          <ItemToggle
+            key={item.id}
+            label={equipmentLabel(item.label)}
+            effect={item.effect}
+            locked={item.locked}
+            on={!disabled.includes(item.id)}
+            onToggle={() => onToggle(item.id)}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -61,90 +126,77 @@ function ConstraintDetail({
  * The builder: what the system already knows, an unfenced prompt, and a length.
  *
  * Constraints render as fixed categories — Injuries, Equipment, Dislikes, Goal
- * targets — each mapping to an edge type in the member graph. The labels never
- * change; the counts and contents come from whoever is loaded, so a second
- * dataset fills them without a redesign.
+ * targets — each mapping to something the member graph records. The labels
+ * never change; the contents come from whoever is loaded, so a second dataset
+ * fills them without a redesign.
  */
 export function Builder({
   member,
+  memberId,
+  disabled,
+  onDisabledChange,
   onBuild,
   building,
+  hasPlan,
 }: {
   member: MemberContext
-  onBuild: (req: PlanRequest) => void
+  memberId: string
+  /** Owned by the console: a later adjustment has to send these too. */
+  disabled: string[]
+  onDisabledChange: (next: string[]) => void
+  onBuild: (request: PlanRequest) => void
   building: boolean
+  hasPlan: boolean
 }) {
   const [prompt, setPrompt] = useState("")
   const [minutes, setMinutes] = useState(member.preferred_session_min)
-  const [lifted, setLifted] = useState<ConstraintKind[]>([])
-  const [open, setOpen] = useState<ConstraintKind | null>(ConstraintKind.INJURIES)
 
-  const eligibility = useMemo(() => computeEligibility(lifted), [lifted])
-  const openConstraint = member.constraints.find((c) => c.kind === open) ?? null
+  const eligibility = useQuery({
+    queryKey: ["eligibility", memberId, [...disabled].sort().join(",")],
+    queryFn: () => getEligibility(memberId, disabled),
+  })
 
-  const toggleLift = (kind: ConstraintKind) =>
-    setLifted((prev) =>
-      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
+  const toggle = (id: string) =>
+    onDisabledChange(
+      disabled.includes(id) ? disabled.filter((x) => x !== id) : [...disabled, id],
     )
 
   const submit = () => {
     if (!prompt.trim() || building) return
-    onBuild({ prompt: prompt.trim(), duration_min: minutes, lifted })
+    onBuild({ prompt: prompt.trim(), duration_min: minutes, disabled })
   }
 
-  const availablePct = (eligibility.available / eligibility.total) * 100
+  const pool = eligibility.data
+  const availablePct = pool ? (pool.available / pool.total) * 100 : 0
 
   return (
     <section className="flex flex-col overflow-hidden rounded-[4px] border border-line bg-card">
-      <div className="p-3">
-        <span className="mb-2 block text-[0.6875rem] font-semibold text-dim">
-          Applied from her profile
-        </span>
-
-        <div className="flex flex-wrap gap-1.5">
-          {member.constraints.map((c) => {
-            const isLifted = lifted.includes(c.kind)
-            const isOpen = open === c.kind
-            return (
-              <button
-                key={c.kind}
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => setOpen(isOpen ? null : c.kind)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border py-[0.1875rem] pr-2 pl-2.5 text-[0.6875rem]",
-                  !c.liftable && "border-red bg-red-wash text-red",
-                  c.liftable && isLifted && "border-line text-faint",
-                  c.liftable && !isLifted && "border-line text-ink hover:border-ink",
-                  isOpen && c.liftable && "border-ink bg-ground",
-                )}
-              >
-                <i
-                  aria-hidden
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    !c.liftable && "bg-red",
-                    c.liftable && (isLifted ? "border border-faint" : "bg-ink"),
-                  )}
-                />
-                {c.label}
-                <span className="font-mono text-[0.5938rem] text-faint">{c.items.length}</span>
-              </button>
-            )
-          })}
+      <div className="flex flex-col gap-3 p-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-micro font-semibold text-dim">What's being applied</span>
+          {disabled.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onDisabledChange([])}
+              className="text-micro text-dim underline underline-offset-2 hover:text-ink"
+            >
+              Reset {disabled.length} change{disabled.length === 1 ? "" : "s"}
+            </button>
+          )}
         </div>
 
-        {openConstraint && (
-          <ConstraintDetail
-            constraint={openConstraint}
-            lifted={lifted.includes(openConstraint.kind)}
-            onToggle={() => toggleLift(openConstraint.kind)}
+        {member.constraints.map((constraint) => (
+          <ConstraintGroup
+            key={constraint.kind}
+            constraint={constraint}
+            disabled={disabled}
+            onToggle={toggle}
           />
-        )}
+        ))}
       </div>
 
       <div className="border-t border-soft p-3">
-        <label htmlFor="prompt" className="mb-2 block text-[0.6875rem] font-semibold text-dim">
+        <label htmlFor="prompt" className="mb-2 block text-micro font-semibold text-dim">
           What are we training?
         </label>
         <textarea
@@ -156,18 +208,31 @@ export function Builder({
           }}
           rows={2}
           placeholder="Full lower body, easy on the knee — she was sore after Tuesday"
-          className="w-full resize-none rounded-[4px] border-[1.5px] border-ink bg-card px-2.5 py-2 text-[0.8125rem] leading-relaxed placeholder:text-faint"
+          className="w-full resize-none rounded-[4px] border-[1.5px] border-ink bg-card px-2.5 py-2 text-body leading-relaxed placeholder:text-faint"
         />
+
+        <div className="mt-2 flex flex-wrap gap-1">
+          {EXAMPLES.map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => setPrompt(example)}
+              className="rounded-full border border-line px-2 py-0.5 text-micro text-dim hover:border-cobalt hover:text-cobalt"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="border-t border-soft p-3">
         <div className="mb-1.5 flex items-baseline justify-between">
-          <label htmlFor="minutes" className="text-[0.6875rem] font-semibold text-dim">
+          <label htmlFor="minutes" className="text-micro font-semibold text-dim">
             Length
           </label>
-          <span className="num text-sm">
+          <span className="num text-body">
             {minutes}
-            <small className="text-[0.6875rem] font-medium text-dim"> min</small>
+            <small className="text-micro font-medium text-dim"> min</small>
           </span>
         </div>
         <input
@@ -180,28 +245,43 @@ export function Builder({
           onChange={(e) => setMinutes(Number(e.target.value))}
           className="h-1 w-full accent-ink"
         />
+        {member.typical_session_min !== null && (
+          <p className="mt-1 text-micro text-faint">
+            Her completed sessions average {member.typical_session_min} min.
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-line bg-ground p-3">
-        <span>
-          <span className="num text-[0.9375rem]">{eligibility.available}</span>
-          <span className="text-[0.6875rem] text-dim">
-            {" "}
-            of {eligibility.total} movements fit her right now
-          </span>
-          <span aria-hidden className="mt-1 flex h-1 overflow-hidden rounded-full bg-soft">
-            <i className="bg-cobalt" style={{ width: `${availablePct}%` }} />
-            <i className="bg-red/55" style={{ width: `${100 - availablePct}%` }} />
-          </span>
+        <span className="min-w-0">
+          {pool ? (
+            <>
+              <span className="num text-lead">{pool.available}</span>
+              <span className="text-micro text-dim">
+                {" "}
+                of {pool.total} movements suit her right now
+              </span>
+              <span aria-hidden className="mt-1 flex h-1 overflow-hidden rounded-full bg-soft">
+                <i className="bg-cobalt" style={{ width: `${availablePct}%` }} />
+                <i className="bg-red/55" style={{ width: `${100 - availablePct}%` }} />
+              </span>
+              <span className="mt-1 block text-micro text-faint">
+                {pool.excluded_by[FilterCause.INJURY]} ruled out by her injury ·{" "}
+                {pool.excluded_by[FilterCause.EQUIPMENT]} need equipment she hasn't got
+              </span>
+            </>
+          ) : (
+            <span className="text-micro text-faint">Counting what suits her…</span>
+          )}
         </span>
 
         <button
           type="button"
           onClick={submit}
           disabled={!prompt.trim() || building}
-          className="shrink-0 rounded-[4px] bg-ink px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+          className="shrink-0 rounded-[4px] bg-ink px-3 py-1.5 text-meta font-semibold text-white disabled:opacity-40"
         >
-          {building ? "Building…" : "Build session"}
+          {building ? "Building…" : hasPlan ? "Rebuild session" : "Build session"}
         </button>
       </div>
     </section>

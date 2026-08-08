@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils"
  * values from the graph rather than prose.
  *
  * `goal` lights cobalt when a muscle matches one the member's goals name, so
- * goal alignment reads across the plan without a separate column. `kit` is
- * outlined rather than filled so equipment never gets confused with muscle.
+ * goal alignment reads across the plan without a separate column. `equipment` is
+ * outlined rather than filled so it never gets confused with muscle.
  */
 export function Tag({
   children,
@@ -15,16 +15,16 @@ export function Tag({
   className,
 }: {
   children: ReactNode
-  tone?: "muscle" | "goal" | "kit"
+  tone?: "muscle" | "goal" | "equipment"
   className?: string
 }) {
   return (
     <span
       className={cn(
-        "rounded-[2px] px-[0.3125rem] py-px font-mono text-[0.5938rem] whitespace-nowrap",
+        "rounded-[2px] px-[0.3125rem] py-px font-mono text-micro whitespace-nowrap",
         tone === "goal" && "bg-cobalt-wash text-cobalt",
         tone === "muscle" && "bg-soft text-dim",
-        tone === "kit" && "border border-line text-faint",
+        tone === "equipment" && "border border-line text-faint",
         className,
       )}
     >
