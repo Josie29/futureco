@@ -80,11 +80,4 @@ Muscle overlap alone is weaker: Dumbbell Incline Chest Fly also targets chest bu
 
 ---
 
-## Decisions & deviations
-
-**Deviations from the starting schema in `ASSESSMENT.md:54-56`:**
-
-1. **Added `is_a`.** The spec lists movement patterns as a node type but no edge reaching them. Taken literally, those nodes are unreachable.
-2. **Split `contraindicated-for` into `contraindicates` + `cautions`.** Absolute vs. relative contraindication is a real two-valued clinical distinction. Two relations put the meaning on the edge rather than in a property a traversal must inspect, and let the hard filter and the ranker run as separate passes with separate provenance sentences — a coach can override a caution, not a contraindication.
-3. **Collapsed body region, joint, and sub-structure into one `AnatomicalStructure` type.** They form a single hierarchy joined by a single edge that runs nowhere else; three labels for three positions in one taxonomy is a distinction without a difference. SNOMED CT models it the same way — one "Body structure" hierarchy, where knee, patellofemoral joint, and lower limb are all body structures distinguished by subsumption, not by type. Collapsing also makes the traversal direction-agnostic: one transitive `part_of` closure serves both the "lower body" query descending and the "patellar tendon" query ascending.
-4. **`Injury` lives in KG1, and contraindication edges originate from it directly.** This matches the spec's own gloss — *`contraindicated-for` (injury → unsafe movements)*.
+Schema decisions, and deviations from the starting schema in `ASSESSMENT.md:54-56`, are recorded in [`decisions.md`](decisions.md) under *KG1*.
