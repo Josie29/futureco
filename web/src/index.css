@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* Self-hosted so `docker compose up` works from a cold clone with no network.
+   Archivo carries a width axis (62%–125%), so "Archivo Expanded" is the same
+   variable font at font-stretch: 125% rather than a second family. */
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/spline-sans-mono/wght.css";
+
+/*
+ * "Imaging plate" — the cool light of a radiology lightbox, not parchment.
+ * Carmine is the only saturated colour in the product and is reserved for
+ * safety states, so a carmine pixel always means exactly one thing.
+ * See docs/frontend-spec.md, "Visual direction".
+ */
+@theme {
+  --color-plate: #f6f7f9;
+  --color-film: #ffffff;
+  --color-sunk: #edeff2;
+  --color-rule: #dfe3e8;
+  --color-rule-soft: #e9ecf0;
+
+  --color-ink: #14171b;
+  --color-slate: #626c78;
+  --color-slate-soft: #8a939d;
+
+  --color-carmine: #9e2a3c;
+  --color-carmine-tint: #f5e6e9;
+
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Spline Sans Mono Variable", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+
+  --radius: 0.375rem;
+}
+
+@layer base {
+  html {
+    background: var(--color-plate);
+    color: var(--color-ink);
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Digits that sit in columns — dosing, durations, percentages — must align. */
+  .font-mono,
+  code,
+  kbd {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-carmine);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-slate-soft);
+}
+
+/* Archivo's width axis at maximum — institutional signage, used with restraint
+   on section labels and the member name only. */
+@utility expanded {
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
