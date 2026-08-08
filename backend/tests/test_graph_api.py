@@ -2,11 +2,21 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from neo4j.exceptions import ServiceUnavailable
 
 from api.deps import get_session
-from api.main import app
+from api.errors import register_error_handlers
+from api.routes import graph as graph_routes
+
+# Composed from the router rather than imported from api.app, which pulls in
+# the resolver and its embedding model. These tests exercise routing, scope
+# filtering and failure shapes — none of which needs a 87 MB ONNX model or a
+# live database to be true.
+app = FastAPI()
+app.include_router(graph_routes.router, prefix="/api")
+register_error_handlers(app)
 
 _EDGE_RECORDS: list[dict[str, str]] = [
     {
@@ -75,8 +85,10 @@ def client() -> Iterator[TestClient]:
         yield _FakeSession()
 
     app.dependency_overrides[get_session] = override
-    with TestClient(app) as test_client:
-        yield test_client
+    # Constructed without the context manager on purpose: entering it runs the
+    # lifespan, which these tests have no use for and which would need a live
+    # database. The session dependency is overridden instead.
+    yield TestClient(app)
     app.dependency_overrides.clear()
 
 

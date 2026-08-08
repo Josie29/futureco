@@ -2,8 +2,11 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
+from api.errors import register_error_handlers
+from api.routes import graph as graph_routes
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
 from graph.schema import NodeLabel
@@ -48,6 +51,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="FutureCo coach API", lifespan=lifespan)
+
+# The Vite dev server runs on another origin. In the container the app serves
+# the built assets itself, so this allowance is development-only.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+register_error_handlers(app)
+app.include_router(graph_routes.router, prefix="/api")
 
 
 def runtime() -> Runtime:
