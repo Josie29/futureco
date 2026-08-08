@@ -1,0 +1,18 @@
+[project]
+name = "futureco-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "neo4j>=5.28",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.8",
+]
+
+[tool.uv]
+# Source is a flat tree under src/, not an installable package. Run modules with
+# `PYTHONPATH=src uv run python -m graph.build.main`.
+package = false
+
+[tool.ruff]
+line-length = 100
+src = ["src"]

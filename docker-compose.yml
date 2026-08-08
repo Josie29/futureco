@@ -1,0 +1,19 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      # Override in .env when another local Neo4j already holds the defaults.
+      - "${NEO4J_HTTP_PORT:-7474}:7474" # Browser
+      - "${NEO4J_BOLT_PORT:-7687}:7687" # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/futureco-local
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "futureco-local", "RETURN 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  neo4j-data:
