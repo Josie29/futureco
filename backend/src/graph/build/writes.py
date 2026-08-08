@@ -66,11 +66,19 @@ def merge_nodes(
     rows: list[dict[str, Any]],
     source: GraphSource,
 ) -> None:
-    """Create or update one node per row, keyed by a single property.
+    """Create or replace one node per row, keyed by a single property.
 
-    Every field of a row lands on the node, so callers shape the row to hold
+    A row is the node's whole property set, so callers shape the row to hold
     exactly what belongs there — authoring metadata and values that are better
     expressed as edges are dropped before calling.
+
+    `SET n = row` replaces rather than merges. `+=` would add keys and never
+    remove them, so a renamed field leaves its old name behind holding a stale
+    value forever: renaming `estimated_rep_duration` to `estimated_rep_seconds`
+    and inverting it left the reciprocal readable under the old name. Replacing
+    is only safe because each label is merged exactly once per build and
+    nothing else writes node properties — `_merge_taxonomy` sets `source` on
+    its own nodes, which no caller here also merges.
 
     Args:
         session: An open Neo4j session.
@@ -86,7 +94,7 @@ def merge_nodes(
         f"""
         UNWIND $rows AS row
         MERGE (n:{label} {{{key}: row.{key}}})
-        SET n += row, n.source = $source
+        SET n = row, n.source = $source
         """,
         rows=rows,
         source=source.value,
