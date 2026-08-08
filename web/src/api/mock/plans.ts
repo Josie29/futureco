@@ -301,22 +301,31 @@ const SCENARIOS: Scenario[] = [
   },
 ]
 
+/** Cadence assumed when a reps-based movement carries no measured value. */
+const DEFAULT_REP_SECONDS = 3
+
 /**
- * Per-rep working minutes, clamped.
+ * Per-rep working minutes.
  *
- * `estimated_rep_duration` is unreliable at the top of its range — `Jump Rope
- * - Single-Leg` carries 1.9, which is 114 seconds for one skip. Clamped to a
- * band a coach would recognise so the estimates aren't absurd. This is a
- * finding about the dataset, not a modelling decision; see `docs/mock-notes.md`.
+ * The catalogue used to hold a rate rather than a duration, which put `Jump
+ * Rope - Single-Leg` at 114 seconds a skip and had the mock clamp values into a
+ * believable band. The field is now `estimated_rep_seconds` and every row lands
+ * on a real cadence — 0.53 s for jump rope, 3.33 for a bench press — so the
+ * clamp is gone rather than silently capping honest numbers.
+ *
+ * `0` marks the field inapplicable, so it falls back rather than pricing the
+ * movement at nothing.
  */
-const clampRepMinutes = (value: number) => Math.min(0.35, Math.max(0.05, value))
+function repMinutes(seconds: number | undefined): number {
+  return (seconds && seconds > 0 ? seconds : DEFAULT_REP_SECONDS) / 60
+}
 
 function minutesFor(exercise: AuthoredExercise, perSide: boolean): number {
   const raw = byName.get(exercise.name)
   const sides = perSide ? 2 : 1
   const work =
     exercise.reps !== undefined
-      ? exercise.sets * exercise.reps * clampRepMinutes(raw?.estimated_rep_duration ?? 0.3) * sides
+      ? exercise.sets * exercise.reps * repMinutes(raw?.estimated_rep_seconds) * sides
       : (exercise.sets * (exercise.durationSec ?? 0) * sides) / 60
   const rest = (Math.max(exercise.sets * sides - 1, 0) * (exercise.restSec ?? 0)) / 60
   return Math.max(1, Math.round(work + rest))

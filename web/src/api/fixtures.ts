@@ -39,7 +39,7 @@ export interface CatalogExercise {
   is_duration: boolean
   priority_tier: number
   /** Minutes per rep. Sanity-checked against her real session durations. */
-  estimated_rep_duration: number
+  estimated_rep_seconds: number
 }
 
 interface RawMember {

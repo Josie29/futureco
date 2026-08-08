@@ -58,7 +58,7 @@ The contract is `web/src/types/index.ts`, and the endpoint list is the doc comme
 
 These came out of building the throwaway engine and they apply to the real one.
 
-1. **`estimated_rep_duration` is unreliable above ~0.35.** Documented as minutes per rep, and it holds for most of the catalog. It does not hold at the top: `Jump Rope - Single-Leg` carries **1.9** (114 seconds for one skip), `Push-Up to Knee-Drive` **1.2**. Those rows read like time per set or per bout, and no field distinguishes them. Unclamped, a single tricep extension priced at 25 minutes of a 50-minute session. The mock clamps to 0.05–0.35 min/rep; the real estimator needs some equivalent, or a decision about what the field means.
+1. **Rep cadence comes from the data, not a clamp.** The catalogue used to hold a rate rather than a duration, so `Jump Rope - Single-Leg` read as 114 seconds a skip and the mock clamped every value into a believable band. The field is now `estimated_rep_seconds` and all 43 reps-based rows carry real cadences (0.53 s to 10 s), so the clamp is gone — keeping it would cap honest numbers. `0` still marks the field inapplicable and falls back to a 3 s cadence.
 
 2. **`is_bilateral` marks a left/right pair, not "both sides at once".** Where it is true, `side` and `bilateral_pair_id` are both populated. So the work is per side and costs two working sets. Missing this halves the estimate on every unilateral movement — and session length is exactly this member's adherence problem.
 
