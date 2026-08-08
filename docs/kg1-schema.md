@@ -61,7 +61,7 @@ flowchart LR
 
 ## Two ways anatomy reaches a filter
 
-Safety filtering runs **top-down from the injury**: `Injury -contraindicates-> MovementPattern <-is_a- Exercise`. Two hops, authored, clinical. A recorded knee injury excludes deep-flexion-under-load and plyometric patterns because a clinician's note says so — not because those patterns happen to load the knee. `affects` is deliberately outside that path.
+Safety filtering runs **top-down from the injury**: `Injury -diagnosed_as-> Condition -contraindicates-> MovementPattern <-is_a- Exercise`. Authored, clinical, and fixed-length. A recorded knee injury excludes deep-flexion-under-load and plyometric patterns because a clinician's note says so — not because those patterns happen to load the knee. `affects` is deliberately outside that path.
 
 Anatomy still drives a filter, but for a different input: free text. When a coach types *"her left knee is bothering her"*, the resolver lands on the `knee` node and the filter walks `part_of` and `stresses` to reach exercises at any granularity. That is the ad-hoc path, and it is what `ASSESSMENT.md:30` asks for.
 
@@ -92,7 +92,9 @@ Barbell Decline Bench Press -requires-> Barbell (unavailable) → drop
   → filter by available equipment → rank → substitute
 ```
 
-Muscle overlap alone is weaker: Dumbbell Incline Chest Fly also targets chest but is a different pattern and a poor swap for a press.
+Muscle overlap alone is weaker. *Single-Arm Cable Tricep Extension* shares `triceps` with the barbell press, so overlap would offer it — but it is `arms - accessory`, an isolation movement, and no substitute for a compound press. The pattern axis rejects it without needing to know that.
+
+**The pattern axis is necessary, not sufficient.** With 36 patterns over 50 exercises it is coarse: *Dumbbell Incline Chest Fly* really is `upper push - horizontal`, so it survives the traversal above and still makes a mediocre swap for a press. Pattern membership decides what is *eligible*; ranking — by `priority_tier`, by muscle overlap with the original, by how much of the member's goal it serves — decides what is *offered*. A wider catalog would make the patterns finer and the ranker's job smaller, but the two-stage shape stays.
 
 ---
 

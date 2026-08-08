@@ -66,7 +66,10 @@
       "chest",
       "triceps"
     ],
-    "joints_loaded": [],
+    "joints_loaded": [
+      "shoulder",
+      "elbow"
+    ],
     "movement_patterns": [
       "upper push - horizontal"
     ],
@@ -1127,7 +1130,9 @@
     "muscle_groups": [
       "upper back"
     ],
-    "joints_loaded": [],
+    "joints_loaded": [
+      "thoracic spine"
+    ],
     "movement_patterns": [
       "massage",
       "regen"
