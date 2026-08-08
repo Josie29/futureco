@@ -22,7 +22,7 @@ def main() -> int:
     for label, count in report.nodes_by_label.items():
         print(f"  {label:<22} {count:>4}")
     for rel, count in report.edges_by_type.items():
-        print(f"  -[{rel}]->{'':<{max(0, 15 - len(rel))}} {count:>4}")
+        print(f"  {f'-[{rel}]->':<22} {count:>4}")  # inner f-string renders "-[targets]->"
     return 0
 
 

@@ -1,48 +1,10 @@
-from collections.abc import Callable
 from pathlib import Path
 
 from neo4j import Session
-from pydantic import BaseModel, ConfigDict
 
 from graph.build.catalog import Exercise, load_exercises
 from graph.build.report import BuildReport, read_report
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
-
-
-class _CatalogEdge(BaseModel):
-    """One catalog field, and the nodes and edge type its values become."""
-
-    model_config = ConfigDict(frozen=True)
-
-    terms: Callable[[Exercise], list[str]]
-    label: NodeLabel
-    rel: RelType
-
-
-# This table is the whole of KG1 v0 — every node and edge is derived from the
-# catalog, nothing is authored yet.
-_CATALOG_EDGES: tuple[_CatalogEdge, ...] = (
-    _CatalogEdge(
-        terms=lambda ex: ex.muscle_groups,
-        label=NodeLabel.MUSCLE,
-        rel=RelType.TARGETS,
-    ),
-    _CatalogEdge(
-        terms=lambda ex: ex.joints_loaded,
-        label=NodeLabel.ANATOMICAL_STRUCTURE,
-        rel=RelType.STRESSES,
-    ),
-    _CatalogEdge(
-        terms=lambda ex: ex.equipment_required,
-        label=NodeLabel.EQUIPMENT,
-        rel=RelType.REQUIRES,
-    ),
-    _CatalogEdge(
-        terms=lambda ex: ex.movement_patterns,
-        label=NodeLabel.MOVEMENT_PATTERN,
-        rel=RelType.IS_A,
-    ),
-)
 
 
 def _apply_constraints(session: Session) -> None:
@@ -83,69 +45,46 @@ def _merge_exercises(session: Session, exercises: list[Exercise]) -> None:
     )
 
 
-def _merge_taxonomy(session: Session, exercises: list[Exercise]) -> None:
-    """Create the name-keyed taxonomy nodes the catalog references.
+def _merge_links(
+    session: Session,
+    label: NodeLabel,
+    rel: RelType,
+    pairs: list[tuple[str, str]],
+    tier: AnatomicalTier | None = None,
+) -> None:
+    """Create the taxonomy nodes exercises name, and the edges reaching them.
 
-    Anatomical structures land at the joint tier, because that is the only tier
-    the catalog names; regions and sub-structures are authored separately.
+    Every taxonomy node exists because some exercise names it, so the node and
+    the edge to it are merged in a single statement.
+
+    Args:
+        session: An open Neo4j session.
+        label: Label to give the taxonomy nodes.
+        rel: Edge type running from exercise to taxonomy node.
+        pairs: `(exercise_id, term)` for every term an exercise names.
+        tier: Anatomical tier to record on the node. `None` leaves the property
+            absent, because assigning null in Cypher sets nothing.
     """
-    for edge in _CATALOG_EDGES:
-        # Sorted so a build writes taxonomy nodes in a stable order.
-        names = sorted({term for ex in exercises for term in edge.terms(ex)})
-        if edge.label is NodeLabel.ANATOMICAL_STRUCTURE:
-            session.run(
-                f"""
-                UNWIND $names AS name
-                MERGE (n:{edge.label} {{name: name}})
-                SET n.source = $source, n.tier = $tier
-                """,
-                names=names,
-                source=GraphSource.KG1.value,
-                tier=AnatomicalTier.JOINT.value,
-            )
-        else:
-            session.run(
-                f"""
-                UNWIND $names AS name
-                MERGE (n:{edge.label} {{name: name}})
-                SET n.source = $source
-                """,
-                names=names,
-                source=GraphSource.KG1.value,
-            )
-
-
-def _merge_catalog_edges(session: Session, exercises: list[Exercise]) -> None:
-    """Connect each exercise to the taxonomy nodes its row names."""
-    for edge in _CATALOG_EDGES:
-        pairs = [
-            {"exercise_id": ex.id, "target": term}
-            for ex in exercises
-            for term in edge.terms(ex)
-        ]
-        # `stresses` is constrained to the joint tier in the MATCH rather than
-        # checked afterwards, so the schema invariant lives in the query itself.
-        target_pattern = (
-            f"(t:{edge.label} {{name: row.target, tier: '{AnatomicalTier.JOINT}'}})"
-            if edge.rel is RelType.STRESSES
-            else f"(t:{edge.label} {{name: row.target}})"
-        )
-        session.run(
-            f"""
-            UNWIND $rows AS row
-            MATCH (e:{NodeLabel.EXERCISE} {{id: row.exercise_id}})
-            MATCH {target_pattern}
-            MERGE (e)-[:{edge.rel}]->(t)
-            """,
-            rows=pairs,
-        )
+    session.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (e:{NodeLabel.EXERCISE} {{id: row.exercise_id}})
+        MERGE (t:{label} {{name: row.term}})
+        SET t.source = $source, t.tier = $tier
+        MERGE (e)-[:{rel}]->(t)
+        """,
+        rows=[{"exercise_id": exercise_id, "term": term} for exercise_id, term in pairs],
+        source=GraphSource.KG1.value,
+        tier=tier.value if tier else None,
+    )
 
 
 def build_kg1(session: Session, exercises_path: Path) -> BuildReport:
     """Build the movement/clinical graph from the exercise catalog.
 
     Idempotent: every write is a `MERGE`, so re-running against a populated
-    store converges rather than duplicating.
+    store converges rather than duplicating. Constraints are applied first, or
+    the merges below degrade to full label scans.
 
     Args:
         session: An open Neo4j session.
@@ -161,6 +100,37 @@ def build_kg1(session: Session, exercises_path: Path) -> BuildReport:
     exercises = load_exercises(exercises_path)
     _apply_constraints(session)
     _merge_exercises(session, exercises)
-    _merge_taxonomy(session, exercises)
-    _merge_catalog_edges(session, exercises)
+
+    # These four calls are the whole of KG1 v0 — every node and edge is derived
+    # from the catalog, nothing is authored yet.
+    _merge_links(
+        session,
+        NodeLabel.MUSCLE,
+        RelType.TARGETS,
+        [(ex.id, term) for ex in exercises for term in ex.muscle_groups],
+    )
+    _merge_links(
+        session,
+        NodeLabel.EQUIPMENT,
+        RelType.REQUIRES,
+        [(ex.id, term) for ex in exercises for term in ex.equipment_required],
+    )
+    _merge_links(
+        session,
+        NodeLabel.MOVEMENT_PATTERN,
+        RelType.IS_A,
+        [(ex.id, term) for ex in exercises for term in ex.movement_patterns],
+    )
+    # The catalog only names joints, so `stresses` reaching a joint holds by
+    # construction here. Once regions and sub-structures are authored, this
+    # MERGE could bind a non-joint node on a name collision — it will need to
+    # match on `tier` explicitly then.
+    _merge_links(
+        session,
+        NodeLabel.ANATOMICAL_STRUCTURE,
+        RelType.STRESSES,
+        [(ex.id, term) for ex in exercises for term in ex.joints_loaded],
+        tier=AnatomicalTier.JOINT,
+    )
+
     return read_report(session)
