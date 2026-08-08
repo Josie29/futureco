@@ -1,49 +1,58 @@
 @import "tailwindcss";
 
 /* Self-hosted so `docker compose up` works from a cold clone with no network.
-   Archivo carries a width axis (62%–125%), so "Archivo Expanded" is the same
-   variable font at font-stretch: 125% rather than a second family. */
+   Archivo carries a width axis (62%–125%), so the expanded display voice is
+   the same variable font at font-stretch: 125% rather than a second family. */
 @import "@fontsource-variable/archivo/wdth.css";
 @import "@fontsource-variable/spline-sans-mono/wght.css";
 
 /*
- * "Imaging plate" — the cool light of a radiology lightbox, not parchment.
- * Carmine is the only saturated colour in the product and is reserved for
- * safety states, so a carmine pixel always means exactly one thing.
+ * "Meet" — the visual language of meet posters and plate weights, in sentence
+ * case. Cobalt belongs to the product (active member, goal targets, the main
+ * block, the copilot's voice) and never means a status, which leaves red to
+ * mean exactly one thing: a safety decision the graph enforced.
  * See docs/frontend-spec.md, "Visual direction".
  */
 @theme {
-  --color-plate: #f6f7f9;
-  --color-film: #ffffff;
-  --color-sunk: #edeff2;
-  --color-rule: #dfe3e8;
-  --color-rule-soft: #e9ecf0;
+  --color-ground: #f1f1ef;
+  --color-card: #ffffff;
+  --color-line: #dededa;
+  --color-soft: #e7e7e3;
 
-  --color-ink: #14171b;
-  --color-slate: #626c78;
-  --color-slate-soft: #8a939d;
+  --color-ink: #0d0d0f;
+  --color-dim: #6b6b73;
+  --color-faint: #9a9aa1;
 
-  --color-carmine: #9e2a3c;
-  --color-carmine-tint: #f5e6e9;
+  --color-cobalt: #2b3fe8;
+  --color-cobalt-wash: #ecedfc;
+
+  --color-red: #cf3328;
+  --color-red-wash: #fbecea;
+
+  --color-rail: #0d0d0f;
+  --color-rail-hover: #17171a;
+  --color-rail-active: #1c1c20;
+  --color-rail-chip: #26262b;
+  --color-rail-dim: #8a8a93;
 
   --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Spline Sans Mono Variable", ui-monospace, SFMono-Regular, Menlo,
     monospace;
 
-  --radius: 0.375rem;
+  --radius: 4px;
 }
 
 @layer base {
   html {
-    background: var(--color-plate);
+    background: var(--color-ground);
     color: var(--color-ink);
   }
 
   body {
     margin: 0;
     font-family: var(--font-sans);
-    font-size: 0.875rem;
-    line-height: 1.5;
+    font-size: 0.8125rem;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -55,7 +64,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-carmine);
+    outline: 2px solid var(--color-cobalt);
     outline-offset: 2px;
     border-radius: 2px;
   }
@@ -70,18 +79,18 @@
   }
 }
 
-@utility eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-slate-soft);
+/* Archivo's width axis at maximum. The display voice, used only on member
+   names, section headings and numbers — it stops being a signature if it is
+   everywhere. Never combined with uppercase. */
+@utility disp {
+  font-stretch: 125%;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-/* Archivo's width axis at maximum — institutional signage, used with restraint
-   on section labels and the member name only. */
-@utility expanded {
+@utility num {
   font-stretch: 125%;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }

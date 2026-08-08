@@ -1,64 +1,58 @@
 import { useMemo, useState } from "react"
 import { computeEligibility } from "@/api/mock"
-import { abbreviateEquipment } from "@/components/Chip"
-import { Mark } from "@/components/Mark"
+import { equipmentLabel } from "@/components/Tag"
 import { cn } from "@/lib/utils"
-import { LiftableRule, Verdict, type MemberContext, type PlanRequest } from "@/types"
+import {
+  ConstraintKind,
+  type Constraint,
+  type MemberContext,
+  type PlanRequest,
+} from "@/types"
 
-/** Mean of the completed sessions, used for the duration reality check. */
-function meanCompletedMinutes(member: MemberContext): number | null {
-  const done = member.recent_sessions.filter((s) => s.completed)
-  if (done.length === 0) return null
-  return Math.round(done.reduce((n, s) => n + s.duration_min, 0) / done.length)
+/** Equipment items read better in program-sheet shorthand than title case. */
+function itemLabel(kind: ConstraintKind, item: string): string {
+  return kind === ConstraintKind.EQUIPMENT ? equipmentLabel(item) : item
 }
 
-function RuleRow({
-  label,
-  detail,
-  locked = false,
-  on,
+function ConstraintDetail({
+  constraint,
+  lifted,
   onToggle,
 }: {
-  label: string
-  detail: string
-  locked?: boolean
-  on: boolean
-  onToggle?: () => void
+  constraint: Constraint
+  lifted: boolean
+  onToggle: () => void
 }) {
   return (
-    <div className="grid grid-cols-[1rem_1fr_auto] items-center gap-2 border-t border-rule-soft py-1 first:border-t-0">
-      <span className="flex justify-center">
-        {locked ? (
-          <Mark verdict={Verdict.EXCLUDED} />
+    <div
+      className={cn(
+        "mt-2 flex flex-col gap-1.5 border-l-2 pl-2.5",
+        constraint.liftable ? "border-l-line" : "border-l-red",
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-xs font-semibold">
+          {constraint.items.length > 0
+            ? constraint.items.map((i) => itemLabel(constraint.kind, i)).join(" · ")
+            : `No ${constraint.label.toLowerCase()} on file`}
+        </span>
+
+        {constraint.liftable ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="shrink-0 text-[0.625rem] whitespace-nowrap text-dim underline underline-offset-2 hover:text-ink"
+          >
+            {lifted ? "Apply again" : "Lift for this session"}
+          </button>
         ) : (
-          <span aria-hidden className="font-mono text-slate-soft">
-            ▤
+          <span className="shrink-0 text-[0.625rem] whitespace-nowrap text-faint">
+            can't be lifted
           </span>
         )}
-      </span>
+      </div>
 
-      <span className="min-w-0 text-[11px]">
-        <span className={cn(locked && "font-semibold text-carmine")}>{label}</span>
-        <span className="block font-mono text-[10px] text-slate-soft">{detail}</span>
-      </span>
-
-      {locked ? (
-        <span className="rounded-full border border-carmine bg-carmine-tint px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-carmine">
-          Always on
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-pressed={on}
-          className={cn(
-            "rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wider",
-            on ? "border-ink bg-ink text-film" : "border-rule text-slate-soft",
-          )}
-        >
-          {on ? "On" : "Off"}
-        </button>
-      )}
+      <p className="text-[0.6875rem] text-dim">{constraint.effect}</p>
     </div>
   )
 }
@@ -66,9 +60,10 @@ function RuleRow({
 /**
  * The builder: what the system already knows, an unfenced prompt, and a length.
  *
- * The focus toggles from an earlier pass were cut deliberately — pre-resolved
- * chips would route the most common request shape around the three-pass
- * resolver, which is the thing being assessed. See docs/frontend-spec.md.
+ * Constraints render as fixed categories — Injuries, Equipment, Dislikes, Goal
+ * targets — each mapping to an edge type in the member graph. The labels never
+ * change; the counts and contents come from whoever is loaded, so a second
+ * dataset fills them without a redesign.
  */
 export function Builder({
   member,
@@ -80,65 +75,77 @@ export function Builder({
   building: boolean
 }) {
   const [prompt, setPrompt] = useState("")
-  const [minutes, setMinutes] = useState(member.preferences.preferred_session_minutes)
-  const [lifted, setLifted] = useState<LiftableRule[]>([])
+  const [minutes, setMinutes] = useState(member.preferred_session_min)
+  const [lifted, setLifted] = useState<ConstraintKind[]>([])
+  const [open, setOpen] = useState<ConstraintKind | null>(ConstraintKind.INJURIES)
 
-  const injury = member.injuries[0]
   const eligibility = useMemo(() => computeEligibility(lifted), [lifted])
-  const typicalMinutes = meanCompletedMinutes(member)
-  const completed = member.recent_sessions.filter((s) => s.completed)
+  const openConstraint = member.constraints.find((c) => c.kind === open) ?? null
 
-  const toggle = (rule: LiftableRule) =>
+  const toggleLift = (kind: ConstraintKind) =>
     setLifted((prev) =>
-      prev.includes(rule) ? prev.filter((r) => r !== rule) : [...prev, rule],
+      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
     )
-
-  const isOn = (rule: LiftableRule) => !lifted.includes(rule)
 
   const submit = () => {
     if (!prompt.trim() || building) return
-    onBuild({ prompt: prompt.trim(), duration_min: minutes, lifted_rules: lifted })
+    onBuild({ prompt: prompt.trim(), duration_min: minutes, lifted })
   }
 
   const availablePct = (eligibility.available / eligibility.total) * 100
 
   return (
-    <section className="flex flex-col overflow-hidden rounded-md border border-rule bg-film">
-      <div className="flex flex-col gap-2 p-3">
-        <div className="eyebrow">Applied from {member.name.split(" ")[0]}'s profile</div>
+    <section className="flex flex-col overflow-hidden rounded-[4px] border border-line bg-card">
+      <div className="p-3">
+        <span className="mb-2 block text-[0.6875rem] font-semibold text-dim">
+          Applied from her profile
+        </span>
 
-        {injury && (
-          <RuleRow
-            locked
-            on
-            label={`${injury.region} · ${injury.status} · ${injury.severity}`}
-            detail="excludes plyometric · cautions loaded knee flexion"
+        <div className="flex flex-wrap gap-1.5">
+          {member.constraints.map((c) => {
+            const isLifted = lifted.includes(c.kind)
+            const isOpen = open === c.kind
+            return (
+              <button
+                key={c.kind}
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => setOpen(isOpen ? null : c.kind)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border py-[0.1875rem] pr-2 pl-2.5 text-[0.6875rem]",
+                  !c.liftable && "border-red bg-red-wash text-red",
+                  c.liftable && isLifted && "border-line text-faint",
+                  c.liftable && !isLifted && "border-line text-ink hover:border-ink",
+                  isOpen && c.liftable && "border-ink bg-ground",
+                )}
+              >
+                <i
+                  aria-hidden
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    !c.liftable && "bg-red",
+                    c.liftable && (isLifted ? "border border-faint" : "bg-ink"),
+                  )}
+                />
+                {c.label}
+                <span className="font-mono text-[0.5938rem] text-faint">{c.items.length}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {openConstraint && (
+          <ConstraintDetail
+            constraint={openConstraint}
+            lifted={lifted.includes(openConstraint.kind)}
+            onToggle={() => toggleLift(openConstraint.kind)}
           />
         )}
-        <RuleRow
-          label={`Her equipment — ${member.equipment_available.length} items`}
-          detail={member.equipment_available.map(abbreviateEquipment).join(" · ")}
-          on={isOn(LiftableRule.EQUIPMENT)}
-          onToggle={() => toggle(LiftableRule.EQUIPMENT)}
-        />
-        <RuleRow
-          label="Dislikes"
-          detail={member.preferences.dislikes.join(" · ")}
-          on={isOn(LiftableRule.DISLIKES)}
-          onToggle={() => toggle(LiftableRule.DISLIKES)}
-        />
-        <RuleRow
-          label="Goal targets"
-          detail={[...new Set(member.goals.flatMap((g) => g.targets))].join(" · ")}
-          on={isOn(LiftableRule.GOALS)}
-          onToggle={() => toggle(LiftableRule.GOALS)}
-        />
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-rule-soft p-3">
-        <label htmlFor="prompt" className="eyebrow flex justify-between">
-          <span>What are we training?</span>
-          <span className="normal-case tracking-normal">⌘↵ to build</span>
+      <div className="border-t border-soft p-3">
+        <label htmlFor="prompt" className="mb-2 block text-[0.6875rem] font-semibold text-dim">
+          What are we training?
         </label>
         <textarea
           id="prompt"
@@ -149,64 +156,50 @@ export function Builder({
           }}
           rows={2}
           placeholder="Full lower body, easy on the knee — she was sore after Tuesday"
-          className="resize-none rounded-[3px] border border-ink bg-film px-3 py-2 text-[11px] leading-relaxed placeholder:text-slate-soft"
+          className="w-full resize-none rounded-[4px] border-[1.5px] border-ink bg-card px-2.5 py-2 text-[0.8125rem] leading-relaxed placeholder:text-faint"
         />
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-rule-soft p-3">
-        <label htmlFor="minutes" className="eyebrow">
-          Length
-        </label>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] text-slate-soft">20</span>
-          <input
-            id="minutes"
-            type="range"
-            min={20}
-            max={90}
-            step={5}
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
-            className="h-1 flex-1 accent-ink"
-          />
-          <span className="font-mono text-[10px] text-slate-soft">90</span>
-          <span className="w-14 text-right font-mono text-xs">{minutes} min</span>
+      <div className="border-t border-soft p-3">
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <label htmlFor="minutes" className="text-[0.6875rem] font-semibold text-dim">
+            Length
+          </label>
+          <span className="num text-sm">
+            {minutes}
+            <small className="text-[0.6875rem] font-medium text-dim"> min</small>
+          </span>
         </div>
-        {typicalMinutes !== null && completed.length >= 2 && (
-          <p className="font-mono text-[10px] text-carmine">
-            her preference is {member.preferences.preferred_session_minutes} · her last{" "}
-            {completed.length} ran {completed.map((s) => s.duration_min).join(", ")}
-          </p>
-        )}
+        <input
+          id="minutes"
+          type="range"
+          min={20}
+          max={90}
+          step={5}
+          value={minutes}
+          onChange={(e) => setMinutes(Number(e.target.value))}
+          className="h-1 w-full accent-ink"
+        />
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-rule bg-plate p-3">
-        <div className="flex flex-col gap-px">
-          <span className="font-mono text-xs">
-            <b className="font-semibold">{eligibility.available}</b> of {eligibility.total}{" "}
-            available to {member.name.split(" ")[0]}
+      <div className="flex items-center justify-between gap-3 border-t border-line bg-ground p-3">
+        <span>
+          <span className="num text-[0.9375rem]">{eligibility.available}</span>
+          <span className="text-[0.6875rem] text-dim">
+            {" "}
+            of {eligibility.total} movements fit her right now
           </span>
-          <span
-            className="flex h-1 overflow-hidden rounded-full bg-sunk"
-            aria-hidden
-          >
-            <span className="bg-ink" style={{ width: `${availablePct}%` }} />
-            <span
-              className="bg-carmine/55"
-              style={{ width: `${100 - availablePct}%` }}
-            />
+          <span aria-hidden className="mt-1 flex h-1 overflow-hidden rounded-full bg-soft">
+            <i className="bg-cobalt" style={{ width: `${availablePct}%` }} />
+            <i className="bg-red/55" style={{ width: `${100 - availablePct}%` }} />
           </span>
-          <span className="font-mono text-[10px] text-slate-soft">
-            {eligibility.excluded_by.equipment} equipment ·{" "}
-            {eligibility.excluded_by.injury} contraindicated
-          </span>
-        </div>
+        </span>
 
         <button
           type="button"
           onClick={submit}
           disabled={!prompt.trim() || building}
-          className="rounded-[3px] bg-ink px-3 py-1.5 text-[11px] font-semibold text-film disabled:opacity-40"
+          className="shrink-0 rounded-[4px] bg-ink px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
         >
           {building ? "Building…" : "Build session"}
         </button>

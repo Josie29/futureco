@@ -1,3 +1,6 @@
+/** The date the sample dataset is written against. */
+export const TODAY = "2026-06-04"
+
 /**
  * Parse a date-only string (`YYYY-MM-DD`) as local midnight.
  *
@@ -19,7 +22,19 @@ export function parseCalendarDate(iso: string): Date {
   return new Date(Number(year), Number(month) - 1, Number(day))
 }
 
-/** "Tue, 27 May" — the form used on session cards. */
+/**
+ * Whole days between two calendar dates.
+ *
+ * @param iso Target date, `YYYY-MM-DD`.
+ * @param from Reference date, defaulting to the dataset's "today".
+ * @returns Days remaining; negative once the target has passed.
+ */
+export function daysUntil(iso: string, from: string = TODAY): number {
+  const ms = parseCalendarDate(iso).getTime() - parseCalendarDate(from).getTime()
+  return Math.round(ms / 86_400_000)
+}
+
+/** "Wed 27 May" — the form used on session cards. */
 export function formatSessionDay(iso: string): string {
   return parseCalendarDate(iso).toLocaleDateString(undefined, {
     weekday: "short",
@@ -28,13 +43,13 @@ export function formatSessionDay(iso: string): string {
   })
 }
 
-/** "Tue" — the roster's last-session shorthand. */
+/** "Wed" — the roster's last-session shorthand. */
 export function formatWeekday(iso: string): string {
   return parseCalendarDate(iso).toLocaleDateString(undefined, { weekday: "short" })
 }
 
-/** "1 Sep" — goal target dates. */
-export function formatTargetDate(iso: string): string {
+/** "15 Jul" — goal target dates. */
+export function formatShortDate(iso: string): string {
   return parseCalendarDate(iso).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -42,7 +57,7 @@ export function formatTargetDate(iso: string): string {
 }
 
 /**
- * Format a full timestamp relative to now, for chat.
+ * Format a full timestamp for chat.
  *
  * Chat timestamps carry a time and an offset, so they parse correctly with the
  * built-in constructor — unlike the calendar dates above.
@@ -57,8 +72,7 @@ export function formatMessageTime(ts: string): string {
     minute: "2-digit",
   })
 
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
+  const startOfToday = parseCalendarDate(TODAY)
   const startOfThen = new Date(then)
   startOfThen.setHours(0, 0, 0, 0)
 
