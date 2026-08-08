@@ -22,6 +22,9 @@ class NodeLabel(StrEnum):
     ANATOMICAL_STRUCTURE = "AnatomicalStructure"
     INJURY = "Injury"
     CONDITION = "Condition"
+    MEMBER = "Member"
+    PREFERENCE = "Preference"
+    GOAL = "Goal"
 
 
 class RelType(StrEnum):
@@ -36,6 +39,8 @@ class RelType(StrEnum):
     DIAGNOSED_AS = "diagnosed_as"
     CONTRAINDICATES = "contraindicates"
     CAUTIONS = "cautions"
+    HAS = "has"
+    DISLIKES = "dislikes"
 
 
 class AnatomicalTier(StrEnum):

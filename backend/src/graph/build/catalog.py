@@ -1,6 +1,4 @@
 import json
-from datetime import date
-from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -80,49 +78,6 @@ def load_anatomy(path: Path) -> list[AnatomicalStructure]:
     return [AnatomicalStructure.model_validate(row) for row in rows]
 
 
-class InjuryStatus(StrEnum):
-    """Where an injury sits in its recovery, which gates how hard it filters."""
-
-    ACTIVE = "active"
-    RECOVERING = "recovering"
-    RESOLVED = "resolved"
-
-
-class InjurySeverity(StrEnum):
-    """Clinical severity, used to weight a caution rather than to exclude."""
-
-    MILD = "mild"
-    MODERATE = "moderate"
-    SEVERE = "severe"
-
-
-class Injury(BaseModel):
-    """One entry of `injuries[]` in `data/member-context.json`.
-
-    `condition` is an explicit structured field standing in for extraction from
-    the free-text `notes`, following the precedent set by `goals[].targets` in
-    `docs/decisions.md`. It is what joins an injury to the authored
-    contraindication rules for its clinical condition.
-    """
-
-    id: str
-    region: str
-    joint: str
-    status: InjuryStatus
-    severity: InjurySeverity
-    since: date
-    notes: str
-    condition: str
-
-    @property
-    def side(self) -> str | None:
-        """Laterality, as the part of `region` that is not the joint.
-
-        `region: "left knee"` against `joint: "knee"` gives `"left"`; an
-        unlateralised region gives None.
-        """
-        return self.region.replace(self.joint, "").strip() or None
-
 
 class ContraindicationRule(BaseModel):
     """One condition-to-pattern rule, and why it exists."""
@@ -146,22 +101,6 @@ class Condition(BaseModel):
     snomed_code: str
     snomed_term: str
 
-
-def load_injuries(path: Path) -> list[Injury]:
-    """Read and validate the member's injuries.
-
-    Args:
-        path: Location of `member-context.json`.
-
-    Returns:
-        Every injury recorded for the member.
-
-    Raises:
-        FileNotFoundError: If the file is missing.
-        pydantic.ValidationError: If an injury is malformed.
-    """
-    rows = json.loads(path.read_text())["injuries"]
-    return [Injury.model_validate(row) for row in rows]
 
 
 def load_conditions(path: Path) -> list[Condition]:
