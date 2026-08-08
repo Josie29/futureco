@@ -3,3 +3,6 @@
 .venv/
 __pycache__/
 *.py[cod]
+
+# Tooling occasionally creates one at the repo root; the app owns web/node_modules.
+node_modules/
