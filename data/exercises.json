@@ -25,7 +25,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -56,7 +56,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 1.2,
+    "estimated_rep_seconds": 0.83,
     "bilateral_pair_id": null
   },
   {
@@ -83,7 +83,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": null
   },
   {
@@ -109,7 +109,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -137,7 +137,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": null
   },
   {
@@ -167,7 +167,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": null
   },
   {
@@ -197,7 +197,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": null
   },
   {
@@ -224,7 +224,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": "ae41474d-3891-48a9-b43a-8006665be142"
   },
   {
@@ -253,7 +253,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": "aecd6652-9705-4609-8f05-8b37d3d9b7da"
   },
   {
@@ -286,7 +286,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 1.1,
+    "estimated_rep_seconds": 0.91,
     "bilateral_pair_id": "7188df4c-2524-4e5a-b093-4d0f76ba5106"
   },
   {
@@ -312,7 +312,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.4,
+    "estimated_rep_seconds": 2.5,
     "bilateral_pair_id": null
   },
   {
@@ -341,7 +341,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -371,7 +371,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": null
   },
   {
@@ -396,7 +396,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -421,7 +421,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -446,7 +446,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": "d71d4c88-200a-4b22-ab6f-7155d6bbd1c1"
   },
   {
@@ -472,7 +472,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": "31295116-8369-4f7a-a46e-9a60763cdb0e"
   },
   {
@@ -497,7 +497,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.4,
+    "estimated_rep_seconds": 2.5,
     "bilateral_pair_id": "c7d17922-9ff5-413b-938a-a6c96590afd1"
   },
   {
@@ -524,7 +524,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": null
   },
   {
@@ -552,7 +552,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -579,7 +579,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.8,
+    "estimated_rep_seconds": 1.25,
     "bilateral_pair_id": "e2814de7-ac6d-4d2d-9a2d-6250b75c5d1d"
   },
   {
@@ -605,7 +605,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -632,7 +632,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": "a07c9b45-5d4a-47ed-a17e-6389cf1014b5"
   },
   {
@@ -659,7 +659,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": "65f1f947-cba9-4c83-913d-15d69b26bd15"
   },
   {
@@ -690,7 +690,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -720,7 +720,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.1,
+    "estimated_rep_seconds": 10.0,
     "bilateral_pair_id": null
   },
   {
@@ -746,7 +746,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": null
   },
   {
@@ -777,7 +777,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.4,
+    "estimated_rep_seconds": 2.5,
     "bilateral_pair_id": null
   },
   {
@@ -807,7 +807,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": null
   },
   {
@@ -837,7 +837,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": null
   },
   {
@@ -866,7 +866,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": "14b7f1bb-26ac-431e-a079-3cfc51e849e7"
   },
   {
@@ -899,7 +899,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.6,
+    "estimated_rep_seconds": 1.67,
     "bilateral_pair_id": "4db015c8-ac9b-47b1-8c00-d0c3b452f297"
   },
   {
@@ -927,7 +927,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -956,7 +956,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.1,
+    "estimated_rep_seconds": 10.0,
     "bilateral_pair_id": null
   },
   {
@@ -985,7 +985,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.2,
+    "estimated_rep_seconds": 5.0,
     "bilateral_pair_id": null
   },
   {
@@ -1015,7 +1015,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": null
   },
   {
@@ -1046,7 +1046,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.7,
+    "estimated_rep_seconds": 1.43,
     "bilateral_pair_id": null
   },
   {
@@ -1072,7 +1072,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.7,
+    "estimated_rep_seconds": 1.43,
     "bilateral_pair_id": null
   },
   {
@@ -1096,7 +1096,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": null
   },
   {
@@ -1121,7 +1121,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 1.9,
+    "estimated_rep_seconds": 0.53,
     "bilateral_pair_id": "d4b11a1d-d858-4bb1-85fe-232bdc51293c"
   },
   {
@@ -1147,7 +1147,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": "c14bca1a-72eb-46e8-9de8-ff3d0c0226f8"
   },
   {
@@ -1176,7 +1176,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": "67c66d3a-2daa-4d5e-a26a-7758cf8d896a"
   },
   {
@@ -1204,7 +1204,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.3,
+    "estimated_rep_seconds": 3.33,
     "bilateral_pair_id": null
   },
   {
@@ -1236,7 +1236,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": "20e5227b-36fe-47f0-8c8c-7ad1d8a0818e"
   },
   {
@@ -1263,7 +1263,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.4,
+    "estimated_rep_seconds": 2.5,
     "bilateral_pair_id": "f81b857c-41db-4823-9f0c-6274bf85c267"
   },
   {
@@ -1292,7 +1292,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": null
   },
   {
@@ -1324,7 +1324,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.6,
+    "estimated_rep_seconds": 1.67,
     "bilateral_pair_id": null
   },
   {
@@ -1349,7 +1349,7 @@
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0,
+    "estimated_rep_seconds": 0,
     "bilateral_pair_id": "bce04e50-529c-4b52-b429-6cc0f8e9ecfb"
   },
   {
@@ -1373,7 +1373,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_duration": 0.1,
+    "estimated_rep_seconds": 10.0,
     "bilateral_pair_id": null
   },
   {
@@ -1399,7 +1399,7 @@
     "is_reps": true,
     "is_duration": true,
     "supports_weight": true,
-    "estimated_rep_duration": 0.5,
+    "estimated_rep_seconds": 2.0,
     "bilateral_pair_id": "690b051a-3c35-4d5f-b135-9f868bed2136"
   }
 ]
