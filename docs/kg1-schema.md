@@ -94,7 +94,9 @@ Barbell Decline Bench Press -requires-> Barbell (unavailable) → drop
 
 Muscle overlap alone is weaker. *Single-Arm Cable Tricep Extension* shares `triceps` with the barbell press, so overlap would offer it — but it is `arms - accessory`, an isolation movement, and no substitute for a compound press. The pattern axis rejects it without needing to know that.
 
-**The pattern axis is necessary, not sufficient.** With 36 patterns over 50 exercises it is coarse: *Dumbbell Incline Chest Fly* really is `upper push - horizontal`, so it survives the traversal above and still makes a mediocre swap for a press. Pattern membership decides what is *eligible*; ranking — by `priority_tier`, by muscle overlap with the original, by how much of the member's goal it serves — decides what is *offered*. A wider catalog would make the patterns finer and the ranker's job smaller, but the two-stage shape stays.
+**The pattern axis is necessary, not sufficient.** With 36 patterns over 50 exercises it is coarse: *Dumbbell Incline Chest Fly* really is `upper push - horizontal`, so it survives the traversal above and still makes a mediocre swap for a press. Pattern membership decides what is *eligible*; ranking decides what is *offered*. A wider catalog would make the patterns finer and the ranker's job smaller, but the two-stage shape stays.
+
+**`priority_tier` can't rank here** — all 50 rows are tier 2, as is `is_duration`. Both kept as provided data. Ranking is safety penalty first, goal overlap second; see `decisions.md`, *Safety filter*.
 
 ---
 

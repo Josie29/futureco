@@ -57,6 +57,32 @@ Deviations from the starting schema in `ASSESSMENT.md:54-56`:
 
 ---
 
+## Safety filter
+
+1. **Queries return evidence, not survivors.** A `WHERE` that drops a row makes it unexplainable, so the catalog query returns all 50 and Python judges. Verdicts are kept for all 50, so *"why no squat?"* has an answer — and the scoring tests need no database.
+
+2. **Three quantities that never convert.** `status` is set membership, `penalty` an integer sum, `fit` goal overlap. No penalty total ever reaches `EXCLUDED` — a property test asserts it. One scalar would hide whether an exercise ranked low for risk or for relevance.
+
+3. **Caution (+3) outranks a flagged structure (+2).** A caution is authored clinical judgement about a movement; an anatomy hit is inference that the exercise touches a joint.
+
+4. **Safety dominates goal fit.** Sort key `(status, penalty, -fit, name)`. Jordan's three best goal-serving exercises are her only cautioned survivors, so they rank last among the eligible — with `fit` visible, so the cost of the caution is legible rather than silently resolved.
+
+5. **The mechanical anatomy path only penalises.** Hard-excluding on `stresses` would strip `Cow Pose` and `World's Greatest Stretch`, the rehab work a patellofemoral protocol wants. Hardness comes from the coach's verb, not the graph.
+
+6. **`affects` annotates and scores nothing.** Ranking is the filter's output, so a weight bump would falsify KG1 item 3. `High Plank Bird Dog` stresses knee and shoulder; a test pins that it scores the same either way.
+
+7. **A request can never waive a contraindication.** Waivability comes from the edge type, checked *before* resolution — reporting "unresolved" would imply better phrasing might work. The agent's instruction schema has no waive verb at all.
+
+8. **Removal counts are reported twice.** Per-reason gives 29/6/2 = 37 across 33 removals, since four have two causes. Attributed (26/6/1) sums to 33, and answers *"dropping the equipment limit returns 26 candidates."*
+
+9. **The joint closure uses two directed legs.** Undirected `part_of*` reaches `ankle` and `hip` from `knee`. A test pins it, because the bug is invisible in the counts and wrong in the plan.
+
+10. **`priority_tier` is not a ranking key here, but stays.** All 50 rows are tier 2 — nothing to rank on, and `kg1-schema.md` named it as one, now corrected. Kept because the uniformity is the sample's, not the field's (same for `is_duration`); a weight later is a `Policy` field, not a schema change.
+
+11. **An injury constrains only while `active` or `recovering`.** Otherwise a resolved injury would contraindicate forever, with nothing saying why.
+
+---
+
 ## Data cleanup
 
 Edits to the provided synthetic data, and why each was made rather than worked around in code.
