@@ -1,4 +1,5 @@
 import { TODAY } from "@/lib/dates"
+import { renderPath } from "@/lib/provenance"
 import {
   SpanKind,
   SpanStatus,
@@ -138,7 +139,7 @@ export function traceForPlan(plan: WorkoutPlan): RunTrace {
   const cutsBy = (cause: string) =>
     sample(
       t.filtered.filter((f) => f.cause === cause),
-      (f) => ({ label: f.name, value: f.path || f.detail }),
+      (f) => ({ label: f.name, value: f.path.hops.length > 0 ? renderPath(f.path) : f.detail }),
     )
 
   const spans = sequence(`Generate session · ${plan.title}`, [
@@ -231,7 +232,7 @@ export function traceForPlan(plan: WorkoutPlan): RunTrace {
         ...plan.exercises.flatMap((exercise) =>
           exercise.why.map((reason) => ({
             label: exercise.name,
-            value: reason.path,
+            value: renderPath(reason.path),
           })),
         ),
       ],

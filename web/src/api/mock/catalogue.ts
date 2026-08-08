@@ -1,5 +1,12 @@
 import { catalog, itemId, member, type CatalogExercise } from "@/api/fixtures"
-import { ConstraintKind, FilterCause, type Eligibility, type FilteredExercise } from "@/types"
+import {
+  ConstraintKind,
+  FilterCause,
+  NodeLabel,
+  RelType,
+  type Eligibility,
+  type FilteredExercise,
+} from "@/types"
 
 /**
  * MOCK — throwaway. Replaced wholesale by the real API.
@@ -13,6 +20,10 @@ import { ConstraintKind, FilterCause, type Eligibility, type FilteredExercise } 
  */
 
 const CONTRAINDICATED_PATTERN = "cardio - plyometric"
+
+/** Her recorded injury and its condition, the entry point for a clinical walk. */
+const INJURY = "inj_knee_left"
+const CONDITION = "Patellofemoral stress syndrome"
 
 export const byName = new Map(catalog.map((e) => [e.name, e]))
 
@@ -56,7 +67,21 @@ export function screen(disabled: string[] = []): {
         name: exercise.name,
         cause: FilterCause.INJURY,
         detail: "jumping and landing",
-        path: `Injury -diagnosed_as-> Condition(patellofemoral pain syndrome) -contraindicates-> MovementPattern(${CONTRAINDICATED_PATTERN}) <-is_a- Exercise`,
+        // The clinical walk, hop for hop as `_clinical_signals` emits it:
+        // injury to condition to contraindicated pattern, then back out to the
+        // exercise that is one. See `docs/decisions.md`, KG1 item 3.
+        path: {
+          entry: INJURY,
+          hops: [
+            { rel: RelType.DIAGNOSED_AS, to_label: NodeLabel.CONDITION, to_name: CONDITION },
+            {
+              rel: RelType.CONTRAINDICATES,
+              to_label: NodeLabel.MOVEMENT_PATTERN,
+              to_name: CONTRAINDICATED_PATTERN,
+            },
+            { rel: RelType.IS_A, to_label: NodeLabel.EXERCISE, to_name: "(this)" },
+          ],
+        },
       })
       continue
     }
@@ -68,7 +93,12 @@ export function screen(disabled: string[] = []): {
         name: exercise.name,
         cause: FilterCause.EQUIPMENT,
         detail: `needs ${missing.join(", ")}`,
-        path: `Exercise -requires-> Equipment(${missing[0]}) ∉ Member -has-> Equipment`,
+        // `_constraint_signals` emits one signal per missing item, entered at
+        // the exercise. Only the first is shown; `detail` names them all.
+        path: {
+          entry: exercise.name,
+          hops: [{ rel: RelType.REQUIRES, to_label: NodeLabel.EQUIPMENT, to_name: missing[0] }],
+        },
       })
       continue
     }

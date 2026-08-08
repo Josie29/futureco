@@ -3,7 +3,8 @@ import { itemId } from "@/api/fixtures"
 import { computeEligibility } from "@/api/mock/catalogue"
 import { buildPlan } from "@/api/mock/plans"
 import { traceForPlan } from "@/api/mock/traces"
-import { ConstraintKind, FilterCause, SpanStatus } from "@/types"
+import { renderPath } from "@/lib/provenance"
+import { ConstraintKind, FilterCause, RelType, SpanStatus } from "@/types"
 
 /**
  * These test the **mock**, not the system.
@@ -114,10 +115,15 @@ describe("mock consistency", () => {
     const assemble = trace.spans.find((s) => s.name === "assemble_session")
 
     for (const exercise of plan.exercises) {
+      // Never empty: every prescribed movement owes the coach at least the
+      // safety claim, which is what stops a clear off-goal movement rendering
+      // a "Why this one?" that opens onto nothing.
+      expect(exercise.why.length).toBeGreaterThan(0)
+
       for (const reason of exercise.why) {
         expect(
           assemble?.attributes.some(
-            (a) => a.label === exercise.name && a.value === reason.path,
+            (a) => a.label === exercise.name && a.value === renderPath(reason.path),
           ),
         ).toBe(true)
       }
@@ -133,7 +139,12 @@ describe("mock consistency", () => {
     const dropped = plan.trace.filtered.filter((f) => f.cause === FilterCause.INJURY)
 
     expect(dropped.length).toBeGreaterThan(0)
-    expect(dropped.every((f) => f.path.includes("contraindicates"))).toBe(true)
+    // Asserts the edge type rather than a substring of a rendered string, which
+    // is the point of the path being structured: a rename of the relationship
+    // now fails here instead of silently passing on stale prose.
+    expect(
+      dropped.every((f) => f.path.hops.some((h) => h.rel === RelType.CONTRAINDICATES)),
+    ).toBe(true)
     expect(span?.attributes.some((a) => a.label === dropped[0].name)).toBe(true)
   })
 

@@ -5,13 +5,18 @@ import {
   ConceptIntent,
   ConceptLabel,
   FilterCause,
+  NodeLabel,
   PlanBlock,
+  ReasonKind,
+  RelType,
   ResolutionPass,
   Verdict,
+  type EvidencePath,
   type FilteredExercise,
-  type GraphPath,
+  type PathHop,
   type PlanExercise,
   type PlanRequest,
+  type Reason,
   type ResolvedConcept,
   type UnresolvedPhrase,
   type WorkoutPlan,
@@ -25,9 +30,15 @@ import {
  * ranking and dosing all belong to the backend, and a second implementation in
  * TypeScript would only be a thing to keep in sync and then delete.
  *
- * What this does buy: every state the UI can render is reachable from a prompt
- * a reviewer can actually type, with counts that reconcile against the
- * builder's eligibility panel. See `docs/mock-notes.md`.
+ * The evidence below is the exception, and is authored to mirror
+ * `backend/src/safety/evidence.py` hop for hop — same `SignalKind` values, same
+ * forward-only `Hop`, same `(this)` convention for a reversed final edge. It is
+ * still fake, but it is fake in the shape the real thing emits, so the render
+ * is exercised against something the plan endpoint can actually produce.
+ *
+ * What this buys: every state the UI can render is reachable from a prompt a
+ * reviewer can type, with counts that reconcile against the builder's
+ * eligibility panel. See `docs/mock-notes.md`.
  */
 
 interface AuthoredExercise {
@@ -39,7 +50,7 @@ interface AuthoredExercise {
   restSec?: number
   verdict?: Verdict
   note?: string
-  why: GraphPath[]
+  why: Reason[]
 }
 
 interface Scenario {
@@ -49,7 +60,7 @@ interface Scenario {
   resolved: ResolvedConcept[]
   unresolved: UnresolvedPhrase[]
   /** Removed by *this request*, on top of the standing constraints. */
-  extraFiltered: { name: string; cause: FilterCause; detail: string; path: string }[]
+  extraFiltered: { name: string; cause: FilterCause; detail: string; path: EvidencePath }[]
   exercises: AuthoredExercise[]
 }
 
@@ -72,6 +83,107 @@ const concept = (
   side,
 })
 
+/**
+ * How a hop names the exercise a reason is about.
+ *
+ * `safety/filter.py` uses this literal when the last edge runs backwards —
+ * `_anatomy_signals` walks down to a joint, then names whatever stresses it.
+ * Same token here so one path grammar covers the whole trace.
+ */
+const THIS = "(this)"
+
+/** Her recorded injury, and the condition the contraindication rules hang off. */
+const INJURY = "inj_knee_left"
+const CONDITION = "Patellofemoral stress syndrome"
+
+const hop = (rel: RelType, toLabel: NodeLabel, toName: string): PathHop => ({
+  rel,
+  to_label: toLabel,
+  to_name: toName,
+})
+
+const path = (entry: string, ...hops: PathHop[]): EvidencePath => ({ entry, hops })
+
+const reason = (
+  kind: ReasonKind,
+  detail: string,
+  evidence: EvidencePath,
+  annotation: string | null = null,
+): Reason => ({ kind, detail, path: evidence, annotation })
+
+/** The anatomy walk: down the hierarchy to the joint, back out to what loads it. */
+const kneeWalk = (): EvidencePath =>
+  path(
+    "knee",
+    hop(RelType.PART_OF, NodeLabel.ANATOMICAL_STRUCTURE, "knee"),
+    hop(RelType.STRESSES, NodeLabel.EXERCISE, THIS),
+  )
+
+/**
+ * The safety claim, identical for every movement the filter cleared.
+ *
+ * Written once because in the real system it is derived once, from one walk:
+ * collect the condition's contraindicated patterns, and any exercise no `is_a`
+ * edge connects to one of them is clear. The absence *is* the finding, which is
+ * why the path names what was checked rather than what was found.
+ */
+const cleared = (): Reason =>
+  reason(
+    ReasonKind.CLEARED,
+    "cleared against her left knee — none of the patterns that condition rules out reach it",
+    path(INJURY, hop(RelType.DIAGNOSED_AS, NodeLabel.CONDITION, CONDITION)),
+  )
+
+/** Equipment names are singular count nouns, so they need an article. */
+const article = (noun: string) => (/^[aeiou]/i.test(noun) ? "an" : "a")
+
+/** The positive mirror of `MISSING_EQUIPMENT` — she owns everything it names. */
+const equipmentFit = (exercise: string, item: string): Reason => {
+  const noun = item.toLowerCase()
+  return reason(
+    ReasonKind.EQUIPMENT_FIT,
+    `needs only ${article(noun)} ${noun}, which she has`,
+    path(exercise, hop(RelType.REQUIRES, NodeLabel.EQUIPMENT, item)),
+  )
+}
+
+/** Why the movement sits in the block it does. */
+const patternRole = (exercise: string, pattern: string, detail: string): Reason =>
+  reason(
+    ReasonKind.PATTERN_ROLE,
+    detail,
+    path(exercise, hop(RelType.IS_A, NodeLabel.MOVEMENT_PATTERN, pattern)),
+  )
+
+/** `Goal -targets-> Muscle <-targets- Exercise`, the second leg folded into `(this)`. */
+const goalService = (goal: string, muscle: string, detail: string): Reason =>
+  reason(
+    ReasonKind.GOAL_SERVICE,
+    detail,
+    path(
+      goal,
+      hop(RelType.TARGETS, NodeLabel.MUSCLE, muscle),
+      hop(RelType.TARGETS, NodeLabel.EXERCISE, THIS),
+    ),
+  )
+
+/**
+ * Stands in for a movement that was dropped (ASSESSMENT.md:31).
+ *
+ * The path names the *replaced* movement as its entry, which is what makes
+ * "find equivalent alternatives" auditable rather than a claim in a sentence.
+ */
+const substitution = (replaced: string, pattern: string, detail: string): Reason =>
+  reason(
+    ReasonKind.SUBSTITUTION,
+    detail,
+    path(
+      replaced,
+      hop(RelType.IS_A, NodeLabel.MOVEMENT_PATTERN, pattern),
+      hop(RelType.IS_A, NodeLabel.EXERCISE, THIS),
+    ),
+  )
+
 const WARMUP: AuthoredExercise[] = [
   {
     name: "World's Greatest Stretch",
@@ -79,10 +191,12 @@ const WARMUP: AuthoredExercise[] = [
     sets: 1,
     reps: 10,
     why: [
-      {
-        path: `Exercise -is_a-> MovementPattern(mobility - dynamic)`,
-        says: "Opens the session without loading the knee.",
-      },
+      cleared(),
+      patternRole(
+        "World's Greatest Stretch",
+        "mobility - dynamic",
+        "opens the session — dynamic mobility, which is what a warm-up block is built from",
+      ),
     ],
   },
 ]
@@ -94,10 +208,13 @@ const COOLDOWN: AuthoredExercise[] = [
     sets: 2,
     durationSec: 60,
     why: [
-      {
-        path: `Exercise -is_a-> MovementPattern(mobility - static)`,
-        says: "Closes the session. Needs only a mat, which she has.",
-      },
+      cleared(),
+      patternRole(
+        "Cow Pose",
+        "mobility - static",
+        "closes the session — static mobility, held rather than repeated",
+      ),
+      equipmentFit("Cow Pose", "Yoga Mat"),
     ],
   },
 ]
@@ -113,25 +230,15 @@ const SCENARIOS: Scenario[] = [
     ],
     unresolved: [],
     extraFiltered: [
-      {
-        name: "Dumbbell Goblet Split Squat",
-        cause: FilterCause.INJURY,
-        detail: "loads the knee",
-        path: "Exercise -stresses-> AnatomicalStructure(knee) -part_of*-> knee [side: left]",
-      },
-      {
-        name: "RNT Split Squat",
-        cause: FilterCause.INJURY,
-        detail: "loads the knee",
-        path: "Exercise -stresses-> AnatomicalStructure(knee) -part_of*-> knee [side: left]",
-      },
-      {
-        name: "Alternating Dumbbell Racked Crossback Lunge",
-        cause: FilterCause.INJURY,
-        detail: "loads the knee",
-        path: "Exercise -stresses-> AnatomicalStructure(knee) -part_of*-> knee [side: left]",
-      },
-    ],
+      "Dumbbell Goblet Split Squat",
+      "RNT Split Squat",
+      "Alternating Dumbbell Racked Crossback Lunge",
+    ].map((name) => ({
+      name,
+      cause: FilterCause.INJURY,
+      detail: "loads the knee",
+      path: kneeWalk(),
+    })),
     exercises: [
       ...WARMUP,
       {
@@ -142,10 +249,13 @@ const SCENARIOS: Scenario[] = [
         restSec: 60,
         note: "No bending the knee under load. She's said she dislikes this one — swap it if you can.",
         why: [
-          {
-            path: `Exercise -targets-> Muscle(hamstrings) <-targets- Goal("Build lower-body strength")`,
-            says: "Trains hamstrings without asking the knee to bend under load.",
-          },
+          cleared(),
+          goalService(
+            "Build lower-body strength",
+            "hamstrings",
+            'trains hamstrings, which her top-priority goal "Build lower-body strength" targets',
+          ),
+          equipmentFit("One-Kettlebell Hamstring Walkout", "Kettlebell"),
         ],
       },
       {
@@ -155,10 +265,15 @@ const SCENARIOS: Scenario[] = [
         reps: 10,
         restSec: 45,
         why: [
-          {
-            path: `Exercise -stresses-> ∅ knee`,
-            says: "Doesn't load the knee at all.",
-          },
+          cleared(),
+          // Reaches the knee without loading it, so the structure signal fires,
+          // penalises, and is annotated — the one place `affects` surfaces.
+          reason(
+            ReasonKind.FLAGGED_STRUCTURE,
+            "touches the knee but doesn't load it, so it stays in with the penalty noted",
+            kneeWalk(),
+            "knee is the site of inj_knee_left (left, recovering)",
+          ),
         ],
       },
       ...COOLDOWN,
@@ -191,14 +306,25 @@ const SCENARIOS: Scenario[] = [
         reps: 10,
         restSec: 60,
         why: [
-          {
-            path: `Exercise -targets-> Muscle(glutes) <-targets- Goal("Build lower-body strength")`,
-            says: "Trains glutes, which her lower-body strength goal is about.",
-          },
-          {
-            path: `Exercise -is_a-> MovementPattern(lower push - lunge) <-is_a- Exercise(Barbell Racked Forward Lunge) ✕ equipment`,
-            says: "Stands in for the barbell lunge, which she hasn't got the equipment for.",
-          },
+          cleared(),
+          goalService(
+            "Build lower-body strength",
+            "glutes",
+            "trains glutes, which her lower-body strength goal is about",
+          ),
+          reason(
+            ReasonKind.FOCUS_MATCH,
+            'matches "glutes" from your request',
+            path(
+              "Alternating Dumbbell Racked Crossback Lunge",
+              hop(RelType.TARGETS, NodeLabel.MUSCLE, "glutes"),
+            ),
+          ),
+          substitution(
+            "Barbell Racked Forward Lunge",
+            "lower push - lunge",
+            "stands in for the barbell racked lunge, which needs a barbell she hasn't got",
+          ),
         ],
       },
       {
@@ -210,10 +336,21 @@ const SCENARIOS: Scenario[] = [
         verdict: Verdict.CAUTION,
         note: "Loads the knee, so it comes last once she's warm.",
         why: [
-          {
-            path: `Condition(patellofemoral pain syndrome) -cautions-> MovementPattern(lower push - split squat)`,
-            says: "Flagged rather than dropped — she's cleared for low-impact loading, so it stays in with a note.",
-          },
+          reason(
+            ReasonKind.CAUTION,
+            "the condition cautions this pattern rather than ruling it out, so it stays in and comes last",
+            path(
+              INJURY,
+              hop(RelType.DIAGNOSED_AS, NodeLabel.CONDITION, CONDITION),
+              hop(RelType.CAUTIONS, NodeLabel.MOVEMENT_PATTERN, "lower push - split squat"),
+            ),
+            "knee is the site of inj_knee_left (left, recovering)",
+          ),
+          goalService(
+            "Build lower-body strength",
+            "quads",
+            "trains quads, which her lower-body strength goal targets — the reason it earns a caution rather than a drop",
+          ),
         ],
       },
       ...COOLDOWN,
@@ -239,10 +376,16 @@ const SCENARIOS: Scenario[] = [
         reps: 10,
         restSec: 60,
         why: [
-          {
-            path: `Exercise -requires-> Equipment(Dumbbell) ∈ Member -has-> Equipment`,
-            says: "Needs only the dumbbells she has.",
-          },
+          cleared(),
+          equipmentFit("Alternating Dumbbell Overhead Press", "Dumbbell"),
+          reason(
+            ReasonKind.FOCUS_MATCH,
+            'matches "upper body" from your request',
+            path(
+              "Alternating Dumbbell Overhead Press",
+              hop(RelType.IS_A, NodeLabel.MOVEMENT_PATTERN, "upper push - vertical"),
+            ),
+          ),
         ],
       },
       {
@@ -253,10 +396,13 @@ const SCENARIOS: Scenario[] = [
         restSec: 60,
         note: "Stands in for the barbell decline press — same movement pattern.",
         why: [
-          {
-            path: `Exercise -is_a-> MovementPattern(upper push - horizontal) <-is_a- Exercise(Barbell Decline Bench Press) ✕ equipment`,
-            says: "The closest match to the barbell press with what she has.",
-          },
+          cleared(),
+          substitution(
+            "Barbell Decline Bench Press",
+            "upper push - horizontal",
+            "the closest match to the barbell decline press with what she has",
+          ),
+          equipmentFit("Dumbbell Neutral-Grip Bench Press", "Dumbbell"),
         ],
       },
       ...COOLDOWN,
@@ -276,12 +422,10 @@ const SCENARIOS: Scenario[] = [
         sets: 3,
         reps: 10,
         restSec: 60,
-        why: [
-          {
-            path: `Exercise -requires-> Equipment(Dumbbell) ∈ Member -has-> Equipment`,
-            says: "Cleared every standing constraint.",
-          },
-        ],
+        // The fallback session: nothing in the prompt narrowed anything, so
+        // these carry only the standing reasons. Which is the point — `why` is
+        // never empty even when the coach asked for nothing in particular.
+        why: [cleared(), equipmentFit("Alternating Dumbbell Overhead Press", "Dumbbell")],
       },
       {
         name: "Alternating Low Plank To Low Side Plank",
@@ -289,19 +433,13 @@ const SCENARIOS: Scenario[] = [
         sets: 3,
         reps: 12,
         restSec: 45,
-        why: [
-          {
-            path: `Exercise -requires-> Equipment(Yoga Mat) ∈ Member -has-> Equipment`,
-            says: "Cleared every standing constraint.",
-          },
-        ],
+        why: [cleared(), equipmentFit("Alternating Low Plank To Low Side Plank", "Yoga Mat")],
       },
       ...COOLDOWN,
     ],
   },
 ]
 
-/** Cadence assumed when a reps-based movement carries no measured value. */
 const DEFAULT_REP_SECONDS = 3
 
 /**

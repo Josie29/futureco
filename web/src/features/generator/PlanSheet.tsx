@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Mark } from "@/components/Mark"
 import { Tag, equipmentLabel } from "@/components/Tag"
+import { orderReasons, renderPath } from "@/lib/provenance"
 import {
   ConceptIntent,
   FilterCause,
@@ -57,10 +58,17 @@ function reps(e: PlanExercise): string {
  *
  * The "why" is collapsed rather than absent: a coach reads the program most of
  * the time and audits it some of the time, and the second job shouldn't cost
- * the first any room.
+ * the first any room. The traversal nests one level deeper again, so the three
+ * audiences — running the session, understanding it, defending it — each get
+ * what they need without any of them paying for the others.
  */
 function ExerciseRow({ exercise }: { exercise: PlanExercise }) {
   const [open, setOpen] = useState(false)
+  // Separate state, not derived from `open`: a coach auditing several movements
+  // in a row shouldn't have to reopen the traversal on each one. Collapsing the
+  // reasons and reopening them keeps whichever depth was last chosen.
+  const [showPaths, setShowPaths] = useState(false)
+  const reasons = orderReasons(exercise.why)
 
   return (
     <li className="border-t border-soft/60 first:border-t-0">
@@ -102,16 +110,44 @@ function ExerciseRow({ exercise }: { exercise: PlanExercise }) {
           </button>
 
           {open && (
-            <ul className="mt-1 flex flex-col gap-1.5 border-l-2 border-cobalt pl-2">
-              {/* Only the plain sentence. The traversal that produced it is
-                  in the payload and on the graph tab; a session plan is not
-                  where a coach reads edge syntax. */}
-              {exercise.why.map((reason) => (
-                <li key={reason.says} className="text-micro text-dim">
-                  {reason.says}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-1 border-l-2 border-cobalt pl-2">
+              <ul className="flex flex-col gap-1.5">
+                {reasons.map((reason, i) => (
+                  // Kind alone isn't unique — a movement can serve two goals —
+                  // so position disambiguates within it.
+                  <li key={`${reason.kind}-${i}`} className="text-micro text-dim">
+                    {reason.detail}
+
+                    {showPaths && (
+                      <>
+                        {/* The literal walk. `break-all` because a path is one
+                            unbroken token to the browser, and would otherwise
+                            widen the sheet on a long concept name. */}
+                        <span className="mt-px block font-mono text-micro break-all text-faint">
+                          {renderPath(reason.path)}
+                        </span>
+                        {/* Explains without scoring — names the injury sitting
+                            at a flagged joint. See `Signal.annotation`. */}
+                        {reason.annotation && (
+                          <span className="block text-micro text-faint italic">
+                            {reason.annotation}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              <button
+                type="button"
+                onClick={() => setShowPaths((v) => !v)}
+                aria-expanded={showPaths}
+                className="mt-1.5 font-mono text-micro text-faint underline underline-offset-2 hover:text-cobalt"
+              >
+                {showPaths ? "Hide the traversal" : "Show the traversal"}
+              </button>
+            </div>
           )}
         </div>
 

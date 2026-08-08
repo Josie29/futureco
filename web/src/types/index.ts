@@ -4,6 +4,12 @@
  * See docs/frontend-spec.md, "API surface".
  */
 
+// Re-exported so a consumer of the plan contract doesn't have to know that the
+// graph vocabulary is declared alongside the inspector's types. Both mirror
+// `backend/src/graph/schema.py`; declaring them twice would let them drift.
+export { NodeLabel, RelType } from "@/types/graph"
+import type { NodeLabel, RelType } from "@/types/graph"
+
 /** Why an exercise did or didn't make the plan. One hue, three intensities. */
 export enum Verdict {
   /** Hard filter — an absolute contraindication or missing equipment. */
@@ -225,17 +231,98 @@ export interface MuscleTag {
 }
 
 /**
- * One step of a graph traversal, rendered as a path rather than prose.
+ * Why the graph treated one movement the way it did.
  *
- * `Dumbbell Goblet Split Squat -targets-> quads <-targets- Build lower-body
- * strength` is the justification a coach can audit; "chosen because it suits
- * her goals" is not.
+ * Mirrors `SignalKind` in `backend/src/safety/evidence.py`, whose six members
+ * are all reasons to drop or down-rank — the safety filter's whole job. The
+ * positive kinds above them are what the plan endpoint has to add, so that
+ * `PlanExercise.why` is *derived* from the same evidence stream as
+ * `ProvenanceTrace.filtered` rather than authored per exercise. That is the
+ * maintainability claim: a new reason is one member here and one template
+ * server-side, never a new sentence per movement.
+ *
+ * Values match the Python enum exactly, so the wire form needs no mapping.
  */
-export interface GraphPath {
-  /** The traversal, arrows included. Rendered in mono. */
-  path: string
-  /** One plain sentence naming what the path establishes. */
-  says: string
+export enum ReasonKind {
+  // The six `SignalKind` already emits, in its own declaration order, so the
+  // two enums diff cleanly against each other.
+  CONTRAINDICATION = "contraindication",
+  MISSING_EQUIPMENT = "missing_equipment",
+  DISLIKE = "dislike",
+  COACH_EXCLUSION = "coach_exclusion",
+  CAUTION = "caution",
+  FLAGGED_STRUCTURE = "flagged_structure",
+
+  // Positive evidence, which the filter has no reason to emit — it exists to
+  // remove things. These are the plan endpoint's to add.
+  /** No contraindicated pattern reaches this movement. The safety claim. */
+  CLEARED = "cleared",
+  /** It trains a muscle one of her goals targets. */
+  GOAL_SERVICE = "goal_service",
+  /** It reaches a concept the coach's prompt resolved to. */
+  FOCUS_MATCH = "focus_match",
+  /** Every piece of equipment it needs is equipment she has. */
+  EQUIPMENT_FIT = "equipment_fit",
+  /** Why it sits in this block — a warm-up is built from mobility patterns. */
+  PATTERN_ROLE = "pattern_role",
+  /** It stands in for a movement that was dropped (ASSESSMENT.md:31). */
+  SUBSTITUTION = "substitution",
+}
+
+/**
+ * One step of a traversal. Mirrors `Hop`.
+ *
+ * Forward-only, as the Python model is. Where the real edge runs the other way
+ * the backend renders the far end as `(this)` — see `_anatomy_signals`, which
+ * walks `part_of` down to a joint and then names the exercise stressing it.
+ * Adding a direction field is a change to `safety/evidence.py` first, not here.
+ */
+export interface PathHop {
+  rel: RelType
+  to_label: NodeLabel
+  to_name: string
+}
+
+/**
+ * Where a reason came from, as the path actually walked. Mirrors `EvidencePath`.
+ *
+ * Structured rather than a pre-rendered arrow string, so one payload serves two
+ * presentations — the plan sheet's collapsed traversal and the Traces tab's
+ * mono line — instead of the backend choosing a rendering and baking it into
+ * the data. `lib/provenance.renderPath` is the TS twin of `EvidencePath.render`.
+ */
+export interface EvidencePath {
+  /** Where the walk started: an exercise, an injury, a goal. */
+  entry: string
+  /** Empty for a reason that needed no traversal, e.g. a coach's exclusion. */
+  hops: PathHop[]
+}
+
+/**
+ * One piece of evidence about one movement. Mirrors `Signal` field for field,
+ * so `Signal.model_dump()` is already this shape and needs no mapping layer.
+ *
+ * `detail` is composed server-side from a per-kind template over the path's own
+ * values — the pattern `policy._headline` already establishes, where every
+ * clause is authored text, a fact from the graph, or a fixed connective, and
+ * nothing is generated. The console renders `detail`; `path` opens behind a
+ * second disclosure and is what satisfies "which graph path justified it"
+ * (ASSESSMENT.md:33) without putting edge syntax in a coach's default view.
+ */
+export interface Reason {
+  kind: ReasonKind
+  /**
+   * The authored rationale where one exists, otherwise the specific fact.
+   * Reads as a clause, because `Verdict.headline` composes several of these
+   * into the one-liner — so a plan sheet renders them as a list, not prose.
+   */
+  detail: string
+  path: EvidencePath
+  /**
+   * Context that explains without scoring. The only place `affects` surfaces:
+   * it names the injury recorded at a flagged joint without changing a weight.
+   */
+  annotation: string | null
 }
 
 export interface PlanExercise {
@@ -255,18 +342,34 @@ export interface PlanExercise {
   verdict: Verdict
   /** One plain sentence, or null when nothing needs the coach's attention. */
   note: string | null
-  /** Why this movement is in the plan, as graph paths. Never empty. */
-  why: GraphPath[]
+  /**
+   * Why this movement is in the plan. Never empty — every prescribed movement
+   * carries at least its `CLEARED` reason, which is the one claim always true
+   * of something the safety filter let through. Without that floor, a clear
+   * off-goal movement would resolve to an empty list.
+   */
+  why: Reason[]
 }
 
 export interface FilteredExercise {
   id: string
   name: string
+  /**
+   * The bucket the dropped list groups under. Coarser than `ReasonKind` on
+   * purpose — a coach reads five groups, not twelve. The seam is deliberate
+   * and needs a mapping server-side, from the excluding signal a removal was
+   * attributed to (`Verdict.attributed_to`) onto one of these.
+   */
   cause: FilterCause
   /** The offending values — "barbell · plate · rack", "plyometric". */
   detail: string
-  /** The traversal that removed it. */
-  path: string
+  /**
+   * The traversal that removed it. Same shape as a `Reason`'s, because it is
+   * the same `Signal` on the backend — only the sign differs. Rendering one as
+   * structure and the other as a string would make the API compose prose for
+   * half its own output.
+   */
+  path: EvidencePath
 }
 
 /** A phrase the resolver matched onto a canonical concept. */
