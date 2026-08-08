@@ -20,8 +20,13 @@
   --color-soft: #e7e7e3;
 
   --color-ink: #0d0d0f;
-  --color-dim: #6b6b73;
-  --color-faint: #9a9aa1;
+  --color-dim: #5f5f68;
+  /* 4.6:1 on --color-card. The old #9a9aa1 measured 2.8:1, under AA, and it
+     carried real content — rest intervals, filter reasons, equipment tags —
+     not decoration. `hush` is the one that may go lighter, because nothing
+     that matters is ever written in it. */
+  --color-faint: #767680;
+  --color-hush: #a8a8af;
 
   --color-cobalt: #2b3fe8;
   --color-cobalt-wash: #ecedfc;
@@ -39,10 +44,36 @@
   --font-mono: "Spline Sans Mono Variable", ui-monospace, SFMono-Regular, Menlo,
     monospace;
 
+  /* Five sizes, named for the job rather than the measurement. The console had
+     a dozen one-off `text-[0.5938rem]` values, and the smallest of them —
+     9.5px — carried dosing and filter reasons. Nothing meaningful now renders
+     below 0.6875rem / 11px. */
+  --text-micro: 0.6875rem; /* mono annotations: rest, durations, counts */
+  --text-micro--line-height: 1.35;
+  --text-meta: 0.75rem; /* labels, timestamps, secondary prose */
+  --text-meta--line-height: 1.4;
+  --text-body: 0.8125rem; /* the base voice */
+  --text-body--line-height: 1.45;
+  --text-lead: 0.9375rem; /* exercise names, metric values */
+  --text-lead--line-height: 1.3;
+  --text-title: 1.125rem; /* section and plan headings */
+  --text-title--line-height: 1.25;
+
   --radius: 4px;
 }
 
 @layer base {
+  /* The console is an app shell, not a document: the three columns scroll
+     independently and the page itself never does. Without pinning the height
+     the whole way down — html, body, and the React root — a tall panel grows
+     past the viewport, the document starts scrolling, and the header and the
+     dark rail slide away leaving the layout in pieces. */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   html {
     background: var(--color-ground);
     color: var(--color-ink);
@@ -50,8 +81,9 @@
 
   body {
     margin: 0;
+    overflow: hidden;
     font-family: var(--font-sans);
-    font-size: 0.8125rem;
+    font-size: var(--text-body);
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
