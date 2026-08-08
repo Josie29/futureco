@@ -1,207 +1,161 @@
 # Frontend Spec — Coach Console
 
-Everything `ASSESSMENT.md` mandates, built to feel like a tool a coach would keep open, and nothing beyond that. Stack fixed in [`tech-stack.md`](tech-stack.md): Vite + React 19 + TypeScript, Tailwind v4, shadcn/ui, Recharts. Lives in `web/`.
+Everything `ASSESSMENT.md` mandates, built to feel like a tool a coach would keep open, and nothing beyond that. Stack fixed in [`tech-stack.md`](tech-stack.md): Vite + React 19 + TypeScript, Tailwind v4, Recharts. Lives in `web/`.
 
 ## What the spec requires
 
 `ASSESSMENT.md:72` enumerates the dashboard exhaustively. Every component traces to a line.
 
-| Requirement | Line | Component |
-|---|---|---|
-| Coach login (mock auth is fine) | `:72` | M1 |
-| A member view | `:72` | M2, M3, M4 |
-| Generator: prompt + time window → structured plan | `:23`, `:72` | M5, M6 |
-| Interactive adjustment (3 scenarios) | `:27-31` | M8 |
-| Provenance trace per plan | `:33` | M7 |
-| Chat panel with retrieval, history, images, follow-ups | `:37`, `:44`, `:72` | M9 |
-| Quick-prompt palette | `:39`, `:41` | M10 |
-| Chart rendering | `:39`, `:42`, `:72` | M11 |
-| Graceful degradation when nothing resolves | `:68` | M12 |
+| Requirement | Line | Component | State |
+|---|---|---|---|
+| Coach login (mock auth is fine) | `:72` | M1 | Built |
+| A member view | `:72` | M2, M3, M4 | Built |
+| Generator: prompt + time window → structured plan | `:23`, `:72` | M5, M6 | Built |
+| Interactive adjustment (3 scenarios) | `:27-31` | M8 | Built — prompt-driven, plus in-place refinement |
+| Provenance trace per plan | `:33` | M7 | Built — both halves, in plain language. The literal traversal stays in the payload |
+| Chat panel with retrieval, history, images, follow-ups | `:37`, `:44`, `:72` | M9 | Built |
+| Quick-prompt palette | `:39`, `:41` | M10 | Built — the four member questions; the two remaining chart prompts are typeable, not buttons |
+| Chart rendering | `:39`, `:42`, `:72` | M11 | Built |
+| Graceful degradation when nothing resolves | `:68` | M12 | Built |
 
 ## Cut, with reasoning
 
 | Cut | Why |
 |---|---|
-| Member context for anyone but Jordan | Only one member exists in the data. The roster carries roster-level metadata only; selecting an unpopulated member shows a designed empty state, never fabricated clinical detail. |
-| Morning brief as a dashboard panel | `:71` assigns the brief to the **copilot**. It's delivered instead by opening the thread with the brief already answered — no new component, and it proves retrieval on first paint. |
+| Member context for anyone but Jordan | Only one member exists in the data. The roster carries roster-level metadata only; selecting an unpopulated member gets a 404 from the API and a designed empty state in the UI, never fabricated clinical detail. |
+| Morning brief as a dashboard panel | `:71` assigns the brief to the **copilot**. It's delivered instead by opening the thread with the brief already answered — no new component, and it proves retrieval on first paint. Churn risk *is* promoted to the header, because a risk level that scrolls away isn't surfaced. |
 | Labs / DEXA panels | Quarterly context that changes nothing about today's session. A table of LDL values is inert and proves no retrieval happened. Copilot only. |
-| Biomarkers (sleep, HRV, resting HR) on the dashboard | Putting readiness metrics in the header implies the generator uses them. Nothing in the graph connects sleep to exercise selection, and inventing that link is the unfounded reasoning this system exists to avoid. `Sleep this week` is a mandated quick prompt — the copilot is where it means what it says. |
-| Focus toggles (body region / movement pattern) in the builder | Cut after review. They were a second way to say what the prompt already says, and pre-resolved chips would route the *assessed* path around the three-pass resolver (`:68`). With the prompt as the only way to state intent, every request exercises resolution. |
-| Diff view for adjustments | The provenance trace (M7) already reports what was removed and why. One mechanism, two jobs. |
-| Graph visualization | `:129` — explicit nice-to-have. |
-| Designed responsive / mobile layout | Not mentioned. Target 1280px+; below that it degrades without breaking. |
+| Biomarkers on the dashboard | Putting readiness metrics in the header implies the generator uses them. Nothing in the graph connects sleep to exercise selection, and inventing that link is the unfounded reasoning this system exists to avoid. `Sleep this week` is a mandated quick prompt — the copilot is where it means what it says, and the answer says outright that it changed nothing. |
+| Focus toggles in the builder | They were a second way to say what the prompt already says, and pre-resolved chips would route the *assessed* path around the three-pass resolver (`:68`). With the prompt as the only way to state intent, every request exercises resolution. |
+| Drag-to-reorder the plan | The adjust bar covers the same ground through the resolver, which is the path being assessed. Direct manipulation would need a keyboard equivalent and a second safety story for what's draggable. |
+| Graph visualization | `:129` — explicit nice-to-have. Now covered separately by the `/admin/graph` inspector. |
+| Nothing — observability was taken | `:134` is a nice-to-have and it is built: `/traces` shows the span waterfall, the Cypher each graph step ran, LLM token counts, and which runs degraded or failed. |
+| Designed mobile layout | Not mentioned. Target 1280px+; the copilot dock collapses to reclaim width below that. |
 
-**Held, not cut:** copilot response streaming (`:131`). A chat that appears fully-formed after four seconds feels broken in a way a spinner can't fix. Take it if the SSE plumbing for M5's staged progress lands cheaply.
-
----
-
-## Skeleton
-
-Three regions. The rail is roster metadata only — it exists because a console managing exactly one person reads as a demo, and because it shows the shape the app grows into.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ future · coach console                          Sam Ortiz ▾     │
-├──────────────┬────────────────────────────────┬─────────────────┤
-│ MEMBERS  (4) │ Jordan Rivera · 41 · 1:1       │ COPILOT         │
-│ search…      │ ⚠ left knee · recovering       │ quick prompts   │
-│              │ ▣ DB KB BND MAT BCH            │ ─────────────── │
-│ ● Jordan R.  │ adherence ╲__ 50%  goals ×3    │ brief, already  │
-│   ⚠ knee     ├────────────────────────────────┤ answered        │
-│   Tue · 50%  │ LAST FOUR SESSIONS             │                 │
-│              │ [26m] [skipped] [31m] [28m]    │ chat history    │
-│ ○ Alex M.    ├────────────────────────────────┤ + attachments   │
-│ ○ Priya S.   │ APPLIED FROM PROFILE           │                 │
-│ ○ Devin O.   │  ✕ left knee        always on  │ charts inline   │
-│              │  ▤ equipment ×5           on   │                 │
-│              │  ▤ dislikes               on   │                 │
-│              │  ▤ goal targets           on   │                 │
-│              │ WHAT ARE WE TRAINING?          │                 │
-│              │ [ free text            ⌘↵ ]    │                 │
-│              │ LENGTH  ──●───  50 min         │                 │
-│              │ her last three ran 26, 31, 28  │                 │
-│              │ 18 of 50 available [ Build ]   │                 │
-│              ├────────────────────────────────┤                 │
-│              │ WHY │ THU · LOWER BODY         │ [ Ask…      ▸ ] │
-│              │  ✓  │ World's Greatest Stretch │                 │
-│              │  ●  │ DB Goblet Split Squat    │                 │
-│              │  ✕  │ B̶a̶r̶b̶e̶l̶l̶ ̶R̶a̶c̶k̶e̶d̶ ̶L̶u̶n̶g̶e̶  │                 │
-│              │ swap│ Alt DB Crossback Lunge   │                 │
-└──────────────┴────────────────────────────────┴─────────────────┘
-     15rem                  flex-1                     24rem
-```
+**Held, not cut:** copilot response streaming (`:131`). Answers render a skeleton while in flight and the generator names its pipeline stages, so the wait is legible; token-by-token streaming is the remaining upgrade.
 
 ---
 
 ## Components
 
-**M1 · Coach login** *(mock)* — pick a coach, stored in `localStorage`. Unauthenticated visits redirect; sign-out returns. Deliberately trivial: `:72` says "mock auth is fine."
+**M1 · Coach login** *(mock)* — pick a coach, stored in `localStorage`. Unauthenticated visits redirect and return to where they were headed. Deliberately trivial: `:72` says "mock auth is fine". It earns its place by proving the boundary — the member id in a URL is not authority to read that member.
 
-**M2 · Member roster** — roster-level metadata only: name, last session day, adherence %, injury and churn chips. Sorted by attention needed. Active member reflected in the URL. Selecting an unpopulated member shows a designed empty state.
+**M2 · Member roster** — roster-level metadata only: name, last session day, adherence %, injury and attention chips. Sorted by attention needed. The active member lives in the URL (`/m/:memberId`), so reload and deep-link restore state.
 
-**M3 · Member header** — identity, active injury, available equipment, adherence sparkline, goals with target dates. The injury and equipment are here so a reviewer can tell a safe plan was *constrained* rather than *lucky*. The goals are here because the trace says `targets hamstrings ← goal_strength`, which is unreadable without them.
+**M3 · Member header** — identity, active injury, churn risk, adherence sparkline, sessions this week, typical session length. The injury and the risk level are here so a reviewer can tell a safe plan was *constrained* rather than *lucky*.
 
-**M4 · Recent sessions** — four cards from `workout_history`: date, title, duration, RPE. The skipped session renders in carmine. You can't program Thursday without knowing what Tuesday was, and this is where the churn story stops being a chip and becomes a fact.
+**M4 · Recent sessions** — an aligned list from `workout_history`: date, title, duration, RPE, newest first. The skipped session renders in red. You can't program Thursday without knowing what Tuesday was.
 
-**M5 · The builder** — three parts, in order:
+**M5 · The builder** — three parts: what is being applied, an unfenced prompt, and a length. Constraints are **per-item switches**, not category toggles: a coach can drop the bench she left at the office, or waive one specific dislike, without touching the rest. Each group says in plain words what it does and whether switching changes the **pool** or only the **preference** — so a preference-only group doesn't read as a broken control when the count holds still. Injury items render locked, in the UI and in the API. Plus a live eligibility count (18 of 50) and named pipeline stages while generating.
 
-1. **Applied from her profile.** Injury, equipment, dislikes, goal targets, each stating what it does in graph terms ("Left knee · recovering · mild → *excludes plyometric · cautions loaded knee flexion*"). Equipment, dislikes and goals are switches the coach can lift for one run. **Injury is locked and has no off state in the UI.**
-2. **The prompt.** Unfenced free text, the mandated input (`:23`). Every phrase runs the three-pass resolver.
-3. **Length.** Slider defaulting to `preferred_session_minutes` (50), with a derived note: *her last three ran 26, 31, 28*. Two fields already loaded, one line of UI, and it points at the likeliest fix for a declining adherence curve.
+**M6 · Plan render** — warm-up / main / cool-down; sets, reps, rest, per-side. Estimated total against the requested window, with each block sized by its real share of it.
 
-Plus a **live eligibility count** — `18 of 50 available to Jordan`, her standing pool before any request narrows it, recomputed when a rule is lifted. One Cypher query, no LLM.
+**M7 · Provenance** — the signature, and it has two halves:
+- *Why chosen.* Every prescribed movement carries one plain sentence per reason, collapsed behind "Why this one?".
+- *Why not.* Every dropped movement, grouped by cause, in the coach's words.
+- *The traversal.* Rendered on the Traces tab, not here — `why[].path` under `assemble_session`, and the exclusion walks under the two filter spans. A **How this was built** link on the plan header goes straight to that run. A coach never has to open it; anyone defending the plan can. This is how `:33`'s "which graph path justified it" is satisfied without putting edge syntax in front of a coach.
+- *The funnel.* `50 movements in the library · 18 suit her today · 8 in this session`, so the sheet's counts reconcile against the builder's rather than contradicting them.
 
-And **staged progress while generating** — named pipeline stages (resolving → loading constraints → filtering catalogue → assembling), not an indeterminate spinner. Honest about a multi-second wait and a live demonstration that the traversal is real.
+**M8 · Interactive adjustment** — the three scenarios at `:27-31`, all driven from the prompt, plus an adjust bar on the plan itself. **An adjustment is a new run with a parent pointer, never a mutation**, so the trace a coach acted on survives review.
 
-**M6 · Plan render** — warmup / main / cooldown; sets, reps, rest. Estimated total against the requested window. Paired/unilateral exercises indicate per-side work.
+**M9 · Copilot chat** — opens with the brief already answered. Seeds from `chat_history`; renders `attachments` as captioned placeholder tiles (the sample carries `type` and `caption` but **no URL**). Answers cite the member message they were drawn from, clickable through to the Messages tab. Ungrounded questions answer "I don't have that for Jordan" and name what the record does cover.
 
-**M7 · Provenance margin** — the signature. A left annotation gutter, 7rem, marks right-aligned, hairline rule, then the program column. Per exercise: verdict mark plus the graph path that justified it. **Rejected exercises stay in place, struck through**, so the coach reads the decision rather than a summary of it. Plan-level funnel underneath, grouped by cause. This is the surface that proves the graph did the work; it gets more care than anything else in the app.
+**M10 · Quick-prompt palette** — four full questions rather than seven two-word chips, which read as a filter bar. Charts come back with the answer where a chart is the clearest form, so `Plot adherence trend` is folded into "How's her adherence trending?". `Show message pattern` and `Compare last 4 weeks` (`:42`) stay answerable by typing.
 
-**M8 · Interactive adjustment** — the three scenarios at `:27-31`, all driven from the prompt. Plus direct manipulation of the result: drag to reorder within a block, drag between blocks, drag an alternate in from a tray. **The tray is the eligible pool, so no drag can produce an unsafe plan** — the constraint is enforced by what's draggable at all. Every drag needs a keyboard equivalent.
+**M11 · Charts** — adherence, sleep, message pattern, four-week comparison. Single series each, so no legend: cobalt is the series, red marks a point below target. Every chart ships a numbers table as the accessible view.
 
-**M9 · Copilot chat** — opens with the brief already answered. Seeds from `chat_history`; renders `attachments` as captioned placeholder tiles (the sample carries `type` and `caption` but **no URL**). Follow-ups retain context. Ungrounded questions answer "I don't have that for Jordan."
+**M13 · Traces** *(`:134`, nice-to-have)* — a run list, a span waterfall, and per-span detail: the Cypher a graph step ran, the model and token counts for an LLM call, and the reason a run degraded or failed. Span kinds are labelled rather than coloured — five nominal categories would need five colour-vision-safe hues, and this console spends its one saturated colour on the product and reserves red for status. Written for an engineer, which is why it shows the edge syntax the console hides.
 
-**M10 · Quick-prompt palette** — the four at `:41`, one click to send, reachable as the thread grows.
-
-**M11 · Charts** — the three at `:42` plus sleep. Inline in the thread at 24rem, legible in both themes. Per the `dataviz` skill, colour carries the same meaning across every chart.
-
-**M12 · States** — loading, error, empty, and **degraded**. Degraded is the graded one (`:68`): when a phrase resolves to nothing above threshold, the console names it and says what it did instead.
+**M12 · States** — loading (skeletons shaped like the content), error, empty, and **degraded**. Degraded is the graded one (`:68`): a phrase that resolves to nothing above threshold is named on the sheet with its nearest match, the score, the threshold it missed, and what the system did instead.
 
 ---
 
 ## Production-feel criteria
 
-| | Criterion |
-|---|---|
-| **P1** | Active member lives in the URL (`/m/:memberId`). Reload and deep-link restore full state. |
-| **P2** | No bare spinners. Loading states are skeletons shaped like the content that replaces them. |
-| **P3** | Long operations name what they're doing, never an indeterminate wait. |
-| **P4** | Every empty and error state is designed and states the next action. |
-| **P5** | Primary loop is keyboard-operable — `⌘↵` builds, `↵` sends, `Esc` closes the expanded trace. |
-| **P6** | Timestamps are real and relatively formatted, derived from the data's own `ts` fields. |
-| **P7** | No lorem, no placeholder copy, no dead links in the shipped build. |
-| **P8** | Layout is stable. Async data landing never shifts content already on screen. |
+| | Criterion | State |
+|---|---|---|
+| **P1** | Active member lives in the URL. Reload and deep-link restore full state. | Met |
+| **P2** | No bare spinners. Loading states are skeletons shaped like the content. | Met |
+| **P3** | Long operations name what they're doing. | Met |
+| **P4** | Every empty and error state is designed and states the next action. | Met |
+| **P5** | Primary loop is keyboard-operable — `⌘↵` builds, `↵` sends. | Met |
+| **P6** | Timestamps are real and relatively formatted, from the data's own `ts` fields. | Met |
+| **P7** | No lorem, no placeholder copy, no dead links. | Met |
+| **P8** | Layout is stable. Async data landing never shifts content already on screen. | Met — the previous plan stays mounted and dimmed while the next builds |
+| **P9** | The shell owns its own scrolling. Panes scroll; the page never does. | Met — `html/body/#root` pinned to 100%, `min-h-0` through the column chain |
 
 ---
 
-## Visual direction
+## Visual direction — "Meet"
 
-From the `frontend-design` skill. The direction comes from the product's world — strength programming meeting clinical reasoning — not from dashboard convention.
+The visual language of meet posters and plate weights, in sentence case. The direction comes from the product's world — strength programming meeting clinical reasoning — not from dashboard convention.
 
-### Safety is one hue at three intensities, not traffic lights
+### Safety is one hue at two intensities plus a neutral, not traffic lights
 
-The deliberate risk. Absolute versus relative contraindication is a **gradient**, which is why `decisions.md` split `contraindicates` from `cautions`. Red / amber / green would misrepresent that as three unrelated categories. Typographic marks carry the meaning so nothing depends on colour alone.
+Absolute versus relative contraindication is a **gradient**, which is why `decisions.md` split `contraindicates` from `cautions`. Red / amber / green would misrepresent that as three unrelated categories. Typographic marks carry the meaning so nothing depends on colour alone.
 
 | State | Mark | Treatment |
 |---|---|---|
-| Contraindicated | `✕` | Carmine. Exercise name struck through, left in place. |
-| Caution | `●` | Carmine, outlined. Margin bracket. |
+| Contraindicated | `✕` | Red. Struck through in the dropped list. |
+| Caution | `●` | Red outline. Kept, placed last in its block, note explains why. |
 | Cleared | `✓` | Graphite. The unremarkable good state shouldn't shout as loudly as the dangerous one. |
 
-### Palette — "imaging plate"
+### Palette
 
-Cool light of a radiology lightbox, not parchment. One saturated colour, a deep oxidised carmine from anatomical plate illustration.
-
-> Future's exact brand hexes were never extracted — WebFetch strips CSS. These derive from the subject; reconcile if the real palette becomes available.
+Cobalt belongs to the product — active member, goal targets, the main block, the copilot's voice — and **never means a status**, which leaves red to mean exactly one thing: a safety decision the graph enforced. The charts follow the same rule.
 
 ```css
-:root {
-  --plate:        #f6f7f9;  /* page — cool near-white */
-  --film:         #ffffff;  /* surface */
-  --sunk:         #edeff2;  /* recessed wells, gutter */
-  --rule:         #dfe3e8;  /* hairlines */
-  --ink:          #14171b;  /* text, primary actions · cool near-black */
-  --slate:        #626c78;  /* secondary text, margin annotations */
-  --carmine:      #9e2a3c;  /* THE saturated colour — safety only */
-  --carmine-tint: #f5e6e9;
-}
+--color-ground: #f1f1ef;  /* page */
+--color-card:   #ffffff;  /* surfaces you act on */
+--color-line:   #dededa;  /* hairlines */
+--color-ink:    #0d0d0f;  /* text, primary actions */
+--color-dim:    #5f5f68;  /* secondary text — 6.2:1 on card */
+--color-faint:  #767680;  /* annotations — 4.6:1 on card */
+--color-hush:   #a8a8af;  /* decorative only; nothing that matters */
+--color-cobalt: #2b3fe8;  /* the product colour */
+--color-red:    #cf3328;  /* safety, and only safety */
 ```
 
-Carmine appears **only** on safety states. Primary actions use graphite fill.
+`--color-faint` was `#9a9aa1` (2.8:1, under AA) and carried dosing, rest intervals and filter reasons. Anything that reads as content is now at or above 4.5:1.
 
 ### Type
 
-| Role | Face | Use |
-|---|---|---|
-| Display | **Archivo Expanded** 600 | Section eyebrows (0.6875rem, 0.08em tracking, uppercase), member name |
-| Body / UI | **Archivo** 400/500 | 0.875rem base |
-| Data / trace | **Spline Sans Mono** | Sets·reps·rest, durations, every provenance line |
+One family, Archivo, with its width axis at 125% for the display voice — the same variable font rather than a second family. Spline Sans Mono for anything machine-derived: dosing, durations, every provenance line. Self-hosted via `@fontsource`, so `docker compose up` works from a cold clone with no network.
 
-The mono is functional: it aligns tabular dosing and tells the truth that the trace is machine-derived. Self-hosted via `@fontsource` — `docker compose up` must work from a cold clone with no network.
+Five named sizes, `--text-micro` (0.6875rem) through `--text-title` (1.125rem). Nothing meaningful renders below 11px; the build previously had a 9.5px tier carrying rest intervals and filter reasons.
 
 ### Iconography
 
-Domain vernacular, not an icon library. Equipment reads `DB` / `KB` / `BND` the way a coach writes it on a program sheet. Verdict marks are three pieces of geometry. Lucide only for utility chrome (search, close, chevron).
+Domain vernacular, not an icon library. Equipment reads `dumbbell` / `kettlebell` / `band` the way a coach writes it on a program sheet. Verdict marks are three pieces of hand-drawn geometry. No icon dependency ships.
 
 ---
 
 ## API surface
 
-`prompt` is required and unconstrained; everything else is an optional hint. A request with nothing but a prompt is valid.
+`prompt` is required and unconstrained; everything else is an optional hint. A request with nothing but a prompt is valid. Implemented in `web/src/api/client.ts`, mock-backed today — swapping the bodies for `fetch` is a change to that one file.
 
 | Method | Path | For |
 |---|---|---|
 | `GET` | `/api/coaches` | M1 |
 | `GET` | `/api/members` | M2 — roster metadata, `has_context` flag |
-| `GET` | `/api/members/{id}` | M3, M4 — full context |
-| `GET` | `/api/members/{id}/eligibility` | M5 — live count, `?lifted=equipment,dislikes` |
-| `POST` | `/api/members/{id}/plans` | M5, M6 — `{prompt, duration_min, lifted_rules[]}` → `{run_id, plan, trace}` |
-| `POST` | `/api/members/{id}/plans/{run_id}/adjust` | M8 — `{prompt}` → new run |
+| `GET` | `/api/members/{id}` | M3, M4 — full context; 404 when unpopulated |
+| `GET` | `/api/members/{id}/eligibility?lifted=…` | M5 — live count |
+| `POST` | `/api/members/{id}/plans` | M5, M6 — `{prompt, duration_min, lifted}` → `{plan, trace}` |
+| `POST` | `/api/members/{id}/plans/{run_id}/adjust` | M8 — `{prompt}` → new run with `parent_run_id` |
 | `GET` | `/api/members/{id}/messages` | M9 |
-| `POST` | `/api/members/{id}/messages` | M9, M10, M11 — may return a chart payload |
+| `POST` | `/api/members/{id}/copilot` | M9, M10, M11 — may return a chart payload |
+| `GET` | `/api/traces` | M13 — run list |
+| `GET` | `/api/traces/{run_id}` | M13 — span waterfall and detail |
 
-**`lifted_rules[]` can never contain the injury.** It's loaded server-side from the member ID, which comes from the session rather than the request body. There is no field the client can send to switch it off — the same reason the agent's tools don't expose it.
+**`lifted[]` can never contain the injury.** It's loaded server-side from the member id, which comes from the session rather than the request body. There is no field the client can send to switch it off — the same reason the agent's tools don't expose one. The client filters it too, so the rule holds on both sides.
 
 ---
 
-## Open questions
+## Tests
 
-1. **Chart payload shape** — typed tool result the frontend renders, versus a spec the frontend interprets. M11 forces it.
-2. **Adjustment semantics** — new run with a parent pointer (auditable) versus mutating the current run. M7 and M8 both argue for a new run.
-3. **Does a drag create a new run?** Reordering doesn't change what was filtered, so it shouldn't invalidate the trace. A swap from the tray probably should.
-4. **Does the duration note nudge?** Stating the gap is honest; pre-setting the slider to 35 would override a coach's stated preference on a hunch. A one-tap "use 30" might be the better product.
-5. **Live count debouncing** — one Cypher round-trip per rule toggle needs a stale-response guard.
+`web/src/__tests__`, run with `npm test`. Two files, and only one of them tests shipped code:
 
-## Deferred
+- **`dates.test.ts`** — real frontend logic. Date-only strings must parse as local midnight; `new Date("2026-05-27")` is UTC and renders every date a day early west of Greenwich.
+- **`mock.test.ts`** — tests the **mock**, and says so. It guards one property: the numbers the console prints agree with each other, and every state the plan sheet can render stays reachable from some prompt.
 
-Graph visualization · copilot streaming · member context beyond Jordan · labs and biomarker panels · diff view · designed responsive layout · collapsible rail.
+The two paths `ASSESSMENT.md:73` names — the concept resolver and the safety filter — are backend concerns and are tested there. Deliberately not stubbed here: a suite that passes against a stand-in implies coverage that doesn't exist. See [`mock-notes.md`](mock-notes.md).
