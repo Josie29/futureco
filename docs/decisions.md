@@ -100,6 +100,12 @@ Edits to the provided synthetic data, and why each was made rather than worked a
 
 5. **`estimated_rep_duration` held a rate, so it was inverted and renamed `estimated_rep_seconds`.** Read as seconds, every value was impossible — a bench press rep at 0.3, *World's Greatest Stretch* at 0.1 — and the ordering ran backwards, the fastest movements carrying the largest numbers. Reciprocated, all 50 land on plausible cadences and three on known ones: jump rope 0.53 s/rep, SkiErg 1.67, bench press 5. Two decimals, not the one the source carried, because 0.53 would round to 0.5 and the inversion would stop being reversible; `0` still marks the field inapplicable. Free now, with the `Exercise` model the only reference — once set duration is computed, the same mistake multiplies where it should divide. Two things are left for their own change: one `is_reps: false` row carries a value, inverted rather than zeroed since that is a data judgement; and `is_bilateral` is inverted the same way this field was, `true` on exactly the single-side rows.
 
+6. **Both of those are now fixed, because the alternative was code apologising for data.** `is_bilateral` is flipped on all 50 rows so it is `true` for the 32 bilateral movements, and *Kneeling Stability Ball Lat Stretch* is zeroed to join the seven other `is_reps: false` rows. Two invariants hold that did not before: `is_bilateral` is exactly `side is None`, and `is_reps: false` is exactly `estimated_rep_seconds == 0`.
+
+   The reason to do it here rather than route around it: the planner needs *"is this trained one side at a time"* and *"is this held"* on every exercise it doses. Reading the fields as shipped meant a derived property, a paragraph explaining the inversion, and a test walking the package's syntax tree to stop anyone reading the honest-looking field by mistake — three pieces of code, none of which say anything about training. Reading them fixed is `not is_bilateral` and `not is_reps`. Laterality is a third of a session's scheduled seconds, so a field that means its own opposite is not a wart to document; it is a bug waiting for whoever forgets the paragraph.
+
+   `bilateral_pair_id` stays as provided and stays unused: it holds 18 distinct ids across the 18 unilateral rows, one apiece, so it pairs nothing and there is no correct value to substitute. Recorded rather than invented, as `priority_tier` and `is_duration` are.
+
 ---
 
 ## Packaging
