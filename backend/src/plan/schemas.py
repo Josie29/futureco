@@ -18,12 +18,16 @@ class Section(StrEnum):
 
 
 class Modality(StrEnum):
-    """How a block is counted, which fixes its rep range."""
+    """Which rep range an exercise is counted against.
+
+    Only rep ranges: whether an exercise is held rather than counted comes
+    from the catalog's `is_reps`, per exercise, so there is no isometric
+    modality. A held exercise takes its duration from the section instead.
+    """
 
     STRENGTH = "strength"
     CONDITIONING = "conditioning"
     MOBILITY = "mobility"
-    ISOMETRIC = "isometric"
 
 
 class Slot(StrEnum):
@@ -52,6 +56,45 @@ class FamilyRole(BaseModel):
     section: Section
     modality: Modality
     slot: Slot
+
+
+class MovementFacts(BaseModel):
+    """The catalog fields the packer needs, read back from the Exercise node.
+
+    The graph stays the source of truth — `kg1` writes the whole catalog row
+    onto the node, so nothing here re-reads `exercises.json`.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    exercise_id: str
+    patterns: tuple[str, ...]
+    rep_seconds: float
+    is_reps: bool
+    side: str | None = None
+
+    @property
+    def per_side(self) -> bool:
+        """Whether the exercise trains one side at a time.
+
+        Read from `side`, never from `is_bilateral`: that field is inverted in
+        this data — true on exactly the single-side rows — and
+        `docs/decisions.md`, Data cleanup 4, leaves the fix to its own change.
+        `side` carries the same fact under a name that is not lying, and it
+        survives that fix untouched.
+        """
+        return self.side is not None
+
+    @property
+    def is_held(self) -> bool:
+        """Whether the exercise is held for time rather than counted in reps.
+
+        Either marker is enough. Seven rows carry `0` seconds and eight are
+        `is_reps: false`, so zero implies a hold but a hold does not imply
+        zero — `Kneeling Stability Ball Lat Stretch` is 5.0 and not counted.
+        Taking either is the reading that never prescribes reps of a stretch.
+        """
+        return not self.is_reps or self.rep_seconds <= 0
 
 
 class Prescription(BaseModel):

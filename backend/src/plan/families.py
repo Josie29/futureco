@@ -36,7 +36,7 @@ FAMILY_ROLES: dict[str, FamilyRole] = {
         section=Section.MAIN, modality=Modality.CONDITIONING, slot=Slot.CONDITIONING
     ),
     # Main — core
-    "isometric": FamilyRole(section=Section.MAIN, modality=Modality.ISOMETRIC, slot=Slot.CORE),
+    "isometric": FamilyRole(section=Section.MAIN, modality=Modality.STRENGTH, slot=Slot.CORE),
     "core - anti-extension": FamilyRole(
         section=Section.MAIN, modality=Modality.STRENGTH, slot=Slot.CORE
     ),
@@ -129,36 +129,19 @@ SLOT_ORDER: tuple[Slot, ...] = (
     Slot.MOBILITY,
 )
 
-# Section and slot alone do not decide a role: `High Plank Bird Dog` is
-# `isometric` + `core - anti-rotation` + `quadruped`, which agree on MAIN and
-# CORE and disagree on modality. Modality fixes the rep range, while `is_reps`
-# separately decides whether an exercise is held or counted — so the modality
-# that says the most about counting wins, and ISOMETRIC, which sets no range at
-# all, only wins when nothing else claims the exercise.
-MODALITY_ORDER: tuple[Modality, ...] = (
-    Modality.CONDITIONING,
-    Modality.STRENGTH,
-    Modality.MOBILITY,
-    Modality.ISOMETRIC,
-)
-
-
-def _ordinal(role: FamilyRole) -> tuple[int, int, int]:
-    """Rank one role against another. Total, so resolution cannot tie."""
-    return (
-        SECTION_ORDER.index(role.section),
-        SLOT_ORDER.index(role.slot),
-        MODALITY_ORDER.index(role.modality),
-    )
+def _ordinal(role: FamilyRole) -> tuple[int, int]:
+    """Rank one role against another, section first."""
+    return (SECTION_ORDER.index(role.section), SLOT_ORDER.index(role.slot))
 
 
 def role_of(patterns: tuple[str, ...]) -> FamilyRole | None:
     """Decide where one exercise belongs from every family it claims.
 
-    Section dominates, then slot, then modality — one total ordinal, so the
-    result cannot depend on the order the catalog happens to list patterns in.
-    A partial key would leave ties broken by list position, which is how
-    `High Plank Bird Dog` came out isometric or strength depending on nothing.
+    Section dominates, then slot. Every family sharing a section and slot also
+    shares a modality, so the key is total over this catalog and shuffling
+    `movement_patterns` cannot change a plan — asserted per exercise over every
+    permutation in `test_plan_families`, which is what would catch a new family
+    breaking that.
 
     Args:
         patterns: Every movement-pattern family the exercise names.

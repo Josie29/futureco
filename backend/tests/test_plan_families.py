@@ -4,14 +4,7 @@ import random
 import pytest
 
 from graph.build.catalog import load_exercises
-from plan.families import (
-    FAMILY_ROLES,
-    MODALITY_ORDER,
-    SECTION_ORDER,
-    SLOT_ORDER,
-    role_of,
-    unmapped,
-)
+from plan.families import FAMILY_ROLES, SECTION_ORDER, SLOT_ORDER, role_of, unmapped
 from plan.schemas import Modality, Section, Slot
 from settings import settings
 
@@ -62,12 +55,24 @@ class TestTable:
     def test_the_ordinals_cover_every_value(self) -> None:
         """A value missing from an ordinal raises at resolution time.
 
-        The three `.index` calls are the comparison key, so an omission is a
+        The two `.index` calls are the comparison key, so an omission is a
         ValueError on a coach's request, not merely a wrong sort.
         """
         assert set(SECTION_ORDER) == set(Section)
         assert set(SLOT_ORDER) == set(Slot)
-        assert set(MODALITY_ORDER) == set(Modality)
+
+    def test_a_section_and_slot_fix_the_modality(self) -> None:
+        """The ordinal keys on section and slot only, so the third must follow.
+
+        If two families ever shared a section and slot while disagreeing on
+        modality, `min` would pick by list position again — which is exactly
+        the bug `High Plank Bird Dog` exposed. This is the guard that makes
+        the shorter key safe.
+        """
+        seen: dict[tuple[Section, Slot], Modality] = {}
+        for family, role in FAMILY_ROLES.items():
+            key = (role.section, role.slot)
+            assert seen.setdefault(key, role.modality) is role.modality, family
 
 
 class TestResolution:
@@ -85,12 +90,11 @@ class TestResolution:
         assert role_of(("regen", "mobility - dynamic")).section is Section.WARMUP
 
     def test_a_rep_counted_hold_keeps_a_rep_range(self) -> None:
-        """`High Plank Bird Dog` claims both isometric and strength.
+        """`High Plank Bird Dog` claims isometric alongside two strength families.
 
-        They agree on section and slot, so a key of only those two left the
-        winner decided by list position. Landing on ISOMETRIC gives a
-        rep-counted exercise no rep range at all, and the prescription falls
-        back to whatever the catalog's cadence produces unbounded.
+        It is `is_reps: true`, so it needs a rep range. An isometric modality
+        would have given it none, and — since all three families agree on
+        section and slot — which one won came down to list position.
         """
         role = role_of(("core - anti-rotation", "isometric", "quadruped"))
         assert role.modality is Modality.STRENGTH
