@@ -22,7 +22,7 @@ class Exercise(BaseModel):
     is_reps: bool
     is_duration: bool
     supports_weight: bool
-    estimated_rep_duration: float
+    estimated_rep_seconds: float
     bilateral_pair_id: str | None
 
 
