@@ -94,3 +94,19 @@ Edits to the provided synthetic data, and why each was made rather than worked a
 2. **Repointed `preferences.dislikes` at exercises the catalog stocks.** It read `["Deadlift", "Burpees"]`, and neither exists among the 50 — not as a name, not as a substring — so the edge wrote nothing and the sample could not demonstrate a preference filter at all. Both are replaced with catalog entries that keep the intent and do real work: *One-Kettlebell Hamstring Walkout* is the hip-hinge, and it needs a kettlebell and a mat she owns, so the exclusion is live and independent of her injury; *Vertical Jump to Broad Jump* honours the note *"Dislikes high-impact jumping"* and overlaps the plyometric contraindication, which is what a real chart looks like. The report-rather-than-fail behaviour in KG2 decision 3 stays, because a coach's free text can always miss.
 
 3. **Added `injuries[].condition` to `member-context.json`.** The clinical condition is only stated in free-text `notes`. An explicit field makes `Injury -diagnosed_as-> Condition` a plain string join, with no inference in the build path — the same shortcut `goals[].targets` already takes. Built out, both would be LLM extraction at ingest.
+
+---
+
+## Packaging
+
+1. **`python:3.13-slim`, not alpine.** `onnxruntime` — which `fastembed` depends on — publishes manylinux wheels only. On musl there is no wheel, so pip falls back to compiling from source. Alpine's smaller base is not worth a build that may not finish.
+
+2. **The embedding weights are baked at build time.** fastembed defaults its cache to a directory under the system temp dir, which is the wrong place to leave 87 MB in a container — and would mean a cold `docker compose up` reaching the network on its first vector lookup, breaking the criterion the whole stack was chosen against. `settings.model_cache_dir` defaults to `None` so local development is unchanged; the image sets it. Verified with `docker run --network none`.
+
+3. **The model name is asserted, not just duplicated.** It appears as a Dockerfile build argument and as `EMBEDDING_MODEL` in the source. A build step imports the constant and asserts they agree, so changing one and missing the other fails the build instead of silently re-downloading at first request.
+
+4. **Ownership is set at copy time, never with `chown -R`.** Rewriting mode bits on an existing layer duplicates every file it touches: measured at 674 MB with `COPY --chown` against 849 MB with a later `chown -R`. The model directory cannot stay root-owned, because fastembed writes a tree-cache file beside the weights on load.
+
+5. **Seeding is its own service, not the API's startup.** `seed` runs the build once and exits; `api` waits on `service_completed_successfully`. Folding it into the API would mean every replica racing to build the same graph, and a seed failure surfacing as an unhealthy API rather than as itself. Every write is a `MERGE`, so a second `up` converges.
+
+6. **The API warms the embedder during startup, not on first use.** Loading the model and embedding all 164 concepts costs about a second. Lazily, the first coach request pays it; in the lifespan, no request does — and a container that cannot reach its model fails at boot rather than mid-request.

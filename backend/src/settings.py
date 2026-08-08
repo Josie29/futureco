@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "futureco-local"
     data_dir: Path = Field(default=REPO_ROOT / "data")
+    model_cache_dir: Path | None = None
+    """Where the embedding model lives. None leaves fastembed on its own
+    default, which is a directory under the system temp dir. The container sets
+    this so the weights can be baked into the image at build time."""
 
     @property
     def exercises_path(self) -> Path:

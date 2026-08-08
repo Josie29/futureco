@@ -15,5 +15,42 @@ services:
       timeout: 5s
       retries: 20
 
+  # Builds both knowledge graphs, then exits. Every write is a MERGE, so a
+  # second `docker compose up` converges rather than duplicating.
+  seed:
+    build: &backend-build
+      context: .
+      dockerfile: backend/Dockerfile
+    image: futureco-backend
+    command: ["python", "-m", "graph.build.main"]
+    environment: &backend-env
+      # Container-to-container, so the service name and the in-container port,
+      # not the host mapping above.
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: futureco-local
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+  api:
+    build: *backend-build
+    image: futureco-backend
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      <<: *backend-env
+      # Optional. Absent, the deterministic half of the system still serves.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   neo4j-data:

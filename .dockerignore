@@ -1,0 +1,12 @@
+# The build context is the repo root, so keep out everything the image never
+# needs — the local venv alone is 160 MB.
+.git
+.venv
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+.env
+docs
+scripts
+backend/tests

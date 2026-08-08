@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from graph.schema import NodeLabel
 from resolve.normalize import normalize
+from settings import settings
 
 # The labels a coach's words can name. Member, Goal, Injury and Condition are
 # deliberately absent: they identify one person's records rather than terms
@@ -59,7 +60,7 @@ class Alias(BaseModel):
 class Vocabulary:
     """Every canonical name, its aliases, and their vectors, held in memory.
 
-    Loaded once from the graph. At 166 concepts the whole thing is a few
+    Loaded once from the graph. At 164 concepts the whole thing is a few
     hundred kilobytes, so an index would be lifecycle for nothing — and keeping
     it in process means the resolver is testable without a running database.
     """
@@ -150,7 +151,11 @@ class Vocabulary:
         """
         from fastembed import TextEmbedding
 
-        return TextEmbedding(model_name=EMBEDDING_MODEL)
+        cache_dir = settings.model_cache_dir
+        return TextEmbedding(
+            model_name=EMBEDDING_MODEL,
+            cache_dir=str(cache_dir) if cache_dir else None,
+        )
 
     @cached_property
     def _matrix(self) -> np.ndarray:
