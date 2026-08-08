@@ -1,0 +1,193 @@
+[
+  {
+    "term": "knee",
+    "labels": [
+      "AnatomicalStructure"
+    ],
+    "expects": "knee",
+    "note": "ASSESSMENT.md:68 \u2014 the canonical exact case."
+  },
+  {
+    "term": "kettlebell",
+    "labels": null,
+    "expects": "Kettlebell",
+    "note": "ASSESSMENT.md:68. Unrestricted and still unambiguous, since only Equipment carries the name."
+  },
+  {
+    "term": "chest",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "chest",
+    "note": "From the spec's own prompt example, 'isolation around my pecs'."
+  },
+  {
+    "term": "Barbell",
+    "labels": [
+      "Equipment"
+    ],
+    "expects": "Barbell",
+    "note": "Case folding alone should resolve this."
+  },
+  {
+    "term": "pecs",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "chest",
+    "note": "Alias pass. No lexical or semantic route reaches it."
+  },
+  {
+    "term": "bad lower back",
+    "labels": [
+      "AnatomicalStructure"
+    ],
+    "expects": "lumbar spine",
+    "note": "ASSESSMENT.md:68. Filler stripping plus alias, with the label restriction choosing the anatomy reading."
+  },
+  {
+    "term": "plyometrics",
+    "labels": [
+      "MovementPattern"
+    ],
+    "expects": "cardio - plyometric",
+    "note": "Named in the clinician note on inj_knee_left."
+  },
+  {
+    "term": "dumbbells",
+    "labels": [
+      "Equipment"
+    ],
+    "expects": "Dumbbell",
+    "note": "Fuzzy pass, plural. From the spec's 'only dumbbells and a kettlebell'."
+  },
+  {
+    "term": "hamstring",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "hamstrings",
+    "note": "Fuzzy pass, singular against a plural canonical name."
+  },
+  {
+    "term": "her left knee is bothering her",
+    "labels": [
+      "AnatomicalStructure"
+    ],
+    "expects": "knee",
+    "expects_side": "left",
+    "note": "ASSESSMENT.md:30 verbatim. Laterality must survive normalisation."
+  },
+  {
+    "term": "squats",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": null,
+    "note": "THE guard. Token-set scores 'squats' against 'quads' highly enough that a loose threshold accepts it. Restricted to Muscle there is no correct answer, so it must decline. This case sets the fuzzy floor."
+  },
+  {
+    "term": "squats",
+    "labels": [
+      "MovementPattern"
+    ],
+    "expects": "lower push - squat",
+    "note": "The same word with the caller's real intent supplied."
+  },
+  {
+    "term": "lower back",
+    "labels": null,
+    "expects": null,
+    "note": "Ambiguity guard. A Muscle and an AnatomicalStructure both claim it, so an unrestricted call declines rather than guessing."
+  },
+  {
+    "term": "lower back",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "lower back",
+    "note": "Same term, training-target intent."
+  },
+  {
+    "term": "deadlift",
+    "labels": null,
+    "expects": null,
+    "note": "A real movement this catalog does not stock. Must decline rather than reach 'deltoids'. The dislikes gap in kg2-schema.md is this case."
+  },
+  {
+    "term": "burpees",
+    "labels": null,
+    "expects": null,
+    "note": "As above; fuzzy otherwise drifts to 'obliques'."
+  },
+  {
+    "term": "qwertyuiop",
+    "labels": null,
+    "expects": null,
+    "note": "Nonsense input must degrade gracefully rather than resolve or raise."
+  },
+  {
+    "term": "my knee hurts",
+    "labels": [
+      "AnatomicalStructure"
+    ],
+    "expects": "knee",
+    "note": "Filler stripping across a whole clause."
+  },
+  {
+    "term": "jump rope",
+    "labels": [
+      "Equipment"
+    ],
+    "expects": "Jump Rope",
+    "note": "Multi-word exact match after normalisation."
+  },
+  {
+    "term": "overhead press",
+    "labels": [
+      "MovementPattern"
+    ],
+    "expects": "upper push - vertical",
+    "note": "Alias pass. The vector pass ranks it first but only 0.005 above 'deadlift', which must decline \u2014 see docs/decisions.md, *Resolver*."
+  },
+  {
+    "term": "shoulder blade",
+    "labels": [
+      "AnatomicalStructure"
+    ],
+    "expects": "shoulder",
+    "note": "Fuzzy pass, not vector: token-set scores 'shoulder' at 1.0 because it is a subset of the query's tokens. Kept as the case that shows compound anatomical terms resolve lexically, which is why the vector cases below had to be found rather than assumed."
+  },
+  {
+    "term": "core work",
+    "labels": [
+      "MovementPattern"
+    ],
+    "expects": null,
+    "note": "Ambiguity guard for the vector pass. Five 'core - ...' patterns score within a hundredth of each other, so picking the top one would be arbitrary."
+  },
+  {
+    "term": "quadriceps",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "quads",
+    "note": "Vector pass, and one of only three cases that require it: fuzzy reaches 0.67, well under the bar, while cosine reaches 0.78."
+  },
+  {
+    "term": "calf",
+    "labels": [
+      "Muscle"
+    ],
+    "expects": "calves",
+    "note": "Vector pass. Singular against an irregular plural, which edit distance handles badly (0.60) and embedding handles well (0.89)."
+  },
+  {
+    "term": "skipping rope",
+    "labels": [
+      "Equipment"
+    ],
+    "expects": "Jump Rope",
+    "note": "Vector pass. British English for the same object, sharing only the word 'rope' \u2014 fuzzy 0.62, cosine 0.85."
+  }
+]

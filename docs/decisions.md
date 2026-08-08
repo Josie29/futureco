@@ -39,6 +39,24 @@ Deviations from the starting schema in `ASSESSMENT.md:54-56`:
 
 ---
 
+## Resolver — free text to canonical concepts
+
+1. **The caller passes the labels it accepts; the resolver never guesses by precedence.** Three names claim more than one label: `lower back` is a Muscle *and*, when a coach reports pain, the lumbar spine; `rotator cuff` is a Muscle and an AnatomicalStructure; `stair climber` and `skierg` are both Exercise and Equipment. A fixed precedence would be silently wrong half the time, and there is no way for a call site to say which reading it meant. So an injury site asks for `AnatomicalStructure` and an equipment site asks for `Equipment`, the pool is filtered **before** scoring, and an unrestricted call that ties across labels declines rather than picking.
+
+2. **Exact and alias are one pass, not two.** Both are certain, so running them in sequence let an exact hit return alone and never meet the alias contradicting it — `lower back` resolved to the Muscle without the lumbar spine ever being considered. Pooled, the ambiguity check sees the conflict.
+
+3. **Thresholds are the midpoints of a swept band, not chosen numbers.** `resolve/calibrate.py` sweeps both thresholds against `data/authored/resolver_cases.json` and reports every pair that passes all 25 cases. Fuzzy passes across **0.80–0.99**, vector across **0.60–0.77**; the committed 0.90 and 0.68 are the midpoints. A threshold one hundredth from failing is lucky, not calibrated. The same file is the pytest fixture, so the numbers and the assertions cannot drift apart.
+
+4. **Calibration falsified the design, which is why it exists.** The plan assumed the vector pass would carry paraphrases like *"overhead press"*. It ranks `upper push - vertical` first — at **0.528**. But `deadlift`, which must not resolve at all, reaches `Barbell` at **0.523**. A five-thousandth gap: no threshold separates them, and a value tuned to split it would be overfitting to two points. `overhead press` became an alias instead, which is what the alias file is for — terms no automatic pass can reach safely.
+
+5. **The vector pass nearly didn't earn its place.** Once the cases were running, none of them exercised it: `shoulder blade` resolves by *fuzzy* at 1.0, because token-set matching scores `shoulder` as a subset of the query. Three terms were then found where it is genuinely the only route — `quadriceps → quads` (fuzzy 0.67, cosine 0.78), `calf → calves` (0.60 / 0.89), `skipping rope → Jump Rope` (0.62 / 0.85). Irregular plurals and dialect. A test asserts every pass is exercised by some case, so a pass cannot quietly become dead weight again.
+
+6. **Laterality is extracted, not stripped.** *"her left knee"* yields `knee` plus `side=left`. The recorded injury is left-sided, so a right-knee complaint must not match it — discarding the word would lose a clinical distinction while appearing to work.
+
+7. **Plurals are left to fuzzy rather than normalised away.** Most muscle names are already plural — `quads`, `triceps`, `glutes` — so stripping a trailing `s` would break more than it fixed.
+
+---
+
 ## Data cleanup
 
 Edits to the provided synthetic data, and why each was made rather than worked around in code.

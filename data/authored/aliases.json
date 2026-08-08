@@ -1,0 +1,74 @@
+[
+  {
+    "term": "pecs",
+    "canonical": "chest",
+    "label": "Muscle",
+    "note": "Gym shorthand with no lexical overlap, so neither fuzzy nor embedding reliably reaches it."
+  },
+  {
+    "term": "abs",
+    "canonical": "core",
+    "label": "Muscle",
+    "note": "What a coach says for the muscle group this catalog calls core."
+  },
+  {
+    "term": "delts",
+    "canonical": "deltoids",
+    "label": "Muscle",
+    "note": "Abbreviation; too short for token-set matching to score confidently."
+  },
+  {
+    "term": "glutes",
+    "canonical": "glutes",
+    "label": "Muscle",
+    "note": "Already exact. Listed so the alias file doubles as the record of terms considered."
+  },
+  {
+    "term": "lower back",
+    "canonical": "lumbar spine",
+    "label": "AnatomicalStructure",
+    "note": "The collision this schema has to handle. 'lower back' is also a Muscle in the catalog: a coach reporting pain means the lumbar spine, one naming a training target means the muscle. Only a label-restricted call can tell them apart, which is why an unrestricted 'lower back' declines."
+  },
+  {
+    "term": "lower back",
+    "canonical": "lower back",
+    "label": "Muscle",
+    "note": "The other reading, made explicit so both are visible in one file rather than one being implicit."
+  },
+  {
+    "term": "squats",
+    "canonical": "lower push - squat",
+    "label": "MovementPattern",
+    "note": "A coach excluding 'squats' means the movement pattern, not one exercise. Without this, token-set matching scores it against the Muscle 'quads' \u2014 the false positive that sets the fuzzy threshold."
+  },
+  {
+    "term": "squatting",
+    "canonical": "lower push - squat",
+    "label": "MovementPattern",
+    "note": "Gerund form of the same request; the member's goal_knee is phrased this way."
+  },
+  {
+    "term": "lunges",
+    "canonical": "lower push - lunge",
+    "label": "MovementPattern",
+    "note": "Plural of a pattern name that is singular in the catalog."
+  },
+  {
+    "term": "plyometrics",
+    "canonical": "cardio - plyometric",
+    "label": "MovementPattern",
+    "note": "Named directly in the clinician note on inj_knee_left, so it has to resolve. Fuzzy scores it against 'isometric' instead."
+  },
+  {
+    "term": "jumping",
+    "canonical": "cardio - plyometric",
+    "label": "MovementPattern",
+    "note": "The member's own preference note says 'Dislikes high-impact jumping'."
+  },
+  {
+    "term": "overhead press",
+    "canonical": "upper push - vertical",
+    "label": "MovementPattern",
+    "note": "Calibration showed the vector pass ranks this correctly at 0.528 but the term 'deadlift', which must not resolve at all, reaches 0.523 \u2014 a five-thousandth gap. No vector threshold separates them, so the mapping is authored instead of inferred."
+  }
+]

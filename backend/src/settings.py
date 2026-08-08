@@ -33,6 +33,16 @@ class Settings(BaseSettings):
         return self.data_dir / "authored" / "contraindications.json"
 
     @property
+    def aliases_path(self) -> Path:
+        """Path to the authored lay-term to canonical-name mappings."""
+        return self.data_dir / "authored" / "aliases.json"
+
+    @property
+    def resolver_cases_path(self) -> Path:
+        """Path to the labelled cases that calibrate and test the resolver."""
+        return self.data_dir / "authored" / "resolver_cases.json"
+
+    @property
     def member_context_path(self) -> Path:
         """Path to the sample member, which KG1 reads for injuries only."""
         return self.data_dir / "member-context.json"

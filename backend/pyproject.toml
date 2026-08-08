@@ -3,9 +3,12 @@ name = "futureco-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "fastembed>=0.8.0",
     "neo4j>=5.28",
+    "numpy>=2.5.1",
     "pydantic>=2.11",
     "pydantic-settings>=2.8",
+    "rapidfuzz>=3.14.5",
 ]
 
 [tool.uv]
@@ -16,3 +19,15 @@ package = false
 [tool.ruff]
 line-length = 100
 src = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# src/ is a flat namespace-package tree, so pytest needs it on the path and the
+# importlib import mode to find modules without __init__.py files.
+pythonpath = ["src"]
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]

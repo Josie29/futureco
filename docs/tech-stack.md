@@ -15,6 +15,9 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | Frontend | Framework | Vite + React 19 + TypeScript | Every byte is served by the Python API, so SSR earns nothing; Vite is a static bundle behind nginx |
 | Frontend | Styling / components | Tailwind CSS v4 + shadcn/ui | Tailwind's 0.25rem scale and CSS-variable tokens match house rules; shadcn is copy-in source, not a runtime dependency |
 | Frontend | Charts | Recharts | Declarative React components for adherence/sleep/message-pattern series; the fastest path from data to a readable chart |
+| Resolver | Fuzzy pass | `rapidfuzz`, `token_set_ratio` | Canonical names are multi-word, so a coach's single word must score against the token it shares, not the whole string |
+| Resolver | Vector pass | `fastembed` (ONNX, all-MiniLM-L6-v2), cosine over an in-memory numpy matrix | 166 concepts is ~250 KB of vectors; an index would be lifecycle for nothing, and in-process keeps the resolver testable with no database |
+| Testing | Backend | `pytest`, cases driven from `data/authored/resolver_cases.json` | One file calibrates the thresholds and asserts them, so the two cannot drift |
 | Observability | Trace store | Local Postgres (official Docker image), one append-only table per run holding graph queries, LLM calls, and timings | Self-hosted and queryable with SQL — no vendor account, no fees, no free tier to expire |
 | Infra | Local run | Docker Compose — `neo4j`, `postgres`, `api`, `web`; API waits on healthchecks, seeds, then serves | `docker compose up` is the one command; nothing to install, nothing to expire |
 
@@ -45,6 +48,11 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | UI kit | Hand-rolled CSS | Spends build hours on layout rather than on the graph |
 | Charts | visx | Lower-level primitives — more code per chart than a day allows |
 | Charts | Chart.js | Imperative canvas API that fits awkwardly into React and renders nothing inspectable in the DOM |
+| Fuzzy pass | `difflib` (stdlib) | Sequence-ratio only, no token-set: scores `squats` against `quads` at 0.73 while missing `lower push - squat` entirely |
+| Fuzzy pass | Postgres `pg_trgm` | A network round-trip per candidate against a 166-row vocabulary already in memory |
+| Vector pass | `sentence-transformers` | Pulls PyTorch. Measured: the whole venv is 160 MB with fastembed and no CUDA; torch alone is an order of magnitude more |
+| Vector pass | Neo4j native vector index | Correct at 100k nodes; here it adds index lifecycle for 250 KB and makes the resolver untestable without a live database |
+| Vector pass | Voyage / OpenAI embeddings API | A second key, a network round-trip inside the latency budget, and a free tier that can lapse before review |
 | Observability | Langfuse (self-hosted) | Self-hosted, but three more containers — server, Postgres, ClickHouse |
 | Observability | LangSmith | SaaS signup, a second key, and usage-based pricing |
 | Observability | OpenTelemetry + Jaeger | A collector and UI container to trace a single-process application, with traces that vanish on restart |
