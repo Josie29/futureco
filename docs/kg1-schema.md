@@ -24,6 +24,7 @@
 | `part_of` | AnatomicalStructure → AnatomicalStructure | spec; hierarchy authored from SNOMED | Self-nesting. Granularity bridging, traversed in both directions |
 | `contraindicates` | Injury → Pattern \| Exercise | spec (`contraindicated-for`), split | **Hard exclude** |
 | `cautions` | Injury → Pattern \| Exercise | **added** (other half of the split) | **Soft penalty** — relative contraindication |
+| `affects` | Injury → AnatomicalStructure `[tier: joint]` | **added** — `injuries[].joint` in member context | Anatomical reference only. **Never traversed to filter** — it records where an injury sits so a resolved anatomy term can be tied back to it |
 
 ---
 
@@ -47,9 +48,20 @@ flowchart LR
 
   INJ -->|contraindicates| PAT
   INJ -->|cautions| PAT
+  INJ -.->|"affects<br/>(reference only)"| ANAT
 
   style ANAT fill:#1f3a2d,stroke:#5a9a7a,color:#e8f0ea
 ```
+
+---
+
+## Two ways anatomy reaches a filter
+
+Safety filtering runs **top-down from the injury**: `Injury -contraindicates-> MovementPattern <-is_a- Exercise`. Two hops, authored, clinical. A recorded knee injury excludes deep-flexion-under-load and plyometric patterns because a clinician's note says so — not because those patterns happen to load the knee. `affects` is deliberately outside that path.
+
+Anatomy still drives a filter, but for a different input: free text. When a coach types *"her left knee is bothering her"*, the resolver lands on the `knee` node and the filter walks `part_of` and `stresses` to reach exercises at any granularity. That is the ad-hoc path, and it is what `ASSESSMENT.md:30` asks for.
+
+`affects` is what joins the two. It lets a resolved anatomy term report that a recorded injury already sits there, so the provenance trace can say *"knee — matches recorded left-knee injury `inj_knee_left`"* rather than treating the coach's phrase as unrelated to the member's chart.
 
 `part_of` self-nests, so one hierarchy spans every granularity a coach might name:
 
