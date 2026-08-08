@@ -13,7 +13,13 @@ def main() -> int:
     """
     try:
         with graph_session() as session:
-            report = build_kg1(session, settings.exercises_path, settings.anatomy_path)
+            report = build_kg1(
+                session,
+                settings.exercises_path,
+                settings.anatomy_path,
+                settings.member_context_path,
+                settings.contraindications_path,
+            )
     except Exception as exc:  # noqa: BLE001 - top-level CLI boundary
         print(f"graph build failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

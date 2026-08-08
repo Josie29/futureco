@@ -1,0 +1,41 @@
+[
+  {
+    "condition": "patellofemoral pain syndrome",
+    "snomed_query": "patellofemoral stress syndrome",
+    "source_note": "Authored from the clinician note on inj_knee_left: 'Cleared for low-impact loading; avoid deep knee flexion under load and plyometrics.' Keyed by condition rather than by injury so the same knowledge applies to any member presenting with it.",
+    "rules": [
+      {
+        "pattern": "cardio - plyometric",
+        "relation": "contraindicates",
+        "rationale": "Plyometrics are named directly in the clinician note as something to avoid. Impact loading spikes patellofemoral joint reaction force."
+      },
+      {
+        "pattern": "lower push - squat",
+        "relation": "cautions",
+        "rationale": "Deep flexion under load aggravates the joint, but the pattern encodes neither depth nor load, and the member's goal_knee is a return to pain-free squatting. Down-rank so a coach can prescribe a shallow variation, rather than exclude."
+      },
+      {
+        "pattern": "lower push - lunge",
+        "relation": "cautions",
+        "rationale": "Loaded knee flexion with a long lever at the front knee. Tolerable at partial range, so a penalty rather than a hard exclusion."
+      },
+      {
+        "pattern": "lower push - split squat",
+        "relation": "cautions",
+        "rationale": "Same loaded-flexion pattern as the lunge, with more time under tension at the bottom position."
+      },
+      {
+        "pattern": "lower push - step-up",
+        "relation": "cautions",
+        "rationale": "Moderate knee flexion under load; box height controls the range, so it is often tolerated where a squat is not."
+      },
+      {
+        "pattern": "cardio - locomotion",
+        "relation": "cautions",
+        "rationale": "The note clears low-impact loading, which implies repeated-impact locomotion is not yet appropriate at volume."
+      }
+    ],
+    "snomed_code": "430725003",
+    "snomed_term": "Patellofemoral stress syndrome"
+  }
+]

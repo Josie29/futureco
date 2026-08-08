@@ -9,7 +9,7 @@
 | `AnatomicalStructure` | 27 | `data/authored/anatomy.json` — 6 regions, 9 joints, 12 sub-structures. The 9 joints are the ones `joints_loaded` names; every row carries a SNOMED CT code resolved by `scripts/verify_snomed.py` | One self-nesting hierarchy via `part_of`. `tier` property = `region` \| `joint` \| `substructure`. **Invariant: `stresses` only ever targets `tier: joint`**, pinned in the MATCH |
 | `MovementPattern` | 36 | data — `movement_patterns` | Kinematic class; the substitution axis |
 | `Equipment` | 32 | data — `equipment_required` | |
-| `Injury` | 1 (sample) | `data/member-context.json` — `injuries[]` | Holds `status`, `severity`, `side` (from `region: "left knee"`), and `snomedct_hint`. Origin of both contraindication edges |
+| `Injury` | 1 (sample) | `data/member-context.json` — `injuries[]` | Holds `status`, `severity`, `side` (derived: `region` minus `joint`), and `condition`. The condition carries the SNOMED code, since that is the clinical entity the rules attach to. Origin of both contraindication edges |
 
 ---
 
@@ -22,8 +22,8 @@
 | `requires` | Exercise → Equipment | spec + data | Availability filter |
 | `is_a` | Exercise → MovementPattern | **added** | Spec lists the node type but no edge to it — without this, pattern nodes are orphans and substitution is impossible |
 | `part_of` | AnatomicalStructure → AnatomicalStructure | spec; hierarchy authored from SNOMED | Self-nesting. Granularity bridging, traversed in both directions |
-| `contraindicates` | Injury → Pattern \| Exercise | spec (`contraindicated-for`), split | **Hard exclude** |
-| `cautions` | Injury → Pattern \| Exercise | **added** (other half of the split) | **Soft penalty** — relative contraindication |
+| `contraindicates` | Injury → Pattern \| Exercise | spec (`contraindicated-for`), split. Rules in `data/authored/contraindications.json`, keyed by condition | **Hard exclude**. Carries `rationale` for the provenance trace |
+| `cautions` | Injury → Pattern \| Exercise | **added** (other half of the split), same source | **Soft penalty** — relative contraindication. Carries `rationale` |
 | `affects` | Injury → AnatomicalStructure `[tier: joint]` | **added** — `injuries[].joint` in member context | Anatomical reference only. **Never traversed to filter** — it records where an injury sits so a resolved anatomy term can be tied back to it |
 
 ---

@@ -20,6 +20,7 @@ class NodeLabel(StrEnum):
     EQUIPMENT = "Equipment"
     MOVEMENT_PATTERN = "MovementPattern"
     ANATOMICAL_STRUCTURE = "AnatomicalStructure"
+    INJURY = "Injury"
 
 
 class RelType(StrEnum):
@@ -30,6 +31,9 @@ class RelType(StrEnum):
     REQUIRES = "requires"
     IS_A = "is_a"
     PART_OF = "part_of"
+    AFFECTS = "affects"
+    CONTRAINDICATES = "contraindicates"
+    CAUTIONS = "cautions"
 
 
 class AnatomicalTier(StrEnum):

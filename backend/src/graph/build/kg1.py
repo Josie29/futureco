@@ -2,7 +2,16 @@ from pathlib import Path
 
 from neo4j import Session
 
-from graph.build.catalog import AnatomicalStructure, Exercise, load_anatomy, load_exercises
+from graph.build.catalog import (
+    AnatomicalStructure,
+    Condition,
+    Exercise,
+    Injury,
+    load_anatomy,
+    load_conditions,
+    load_exercises,
+    load_injuries,
+)
 from graph.build.report import BuildReport, read_report
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
 
@@ -19,6 +28,10 @@ def _apply_constraints(session: Session) -> None:
     session.run(
         f"CREATE CONSTRAINT exercise_id IF NOT EXISTS "
         f"FOR (n:{NodeLabel.EXERCISE}) REQUIRE n.id IS UNIQUE"
+    )
+    session.run(
+        f"CREATE CONSTRAINT injury_id IF NOT EXISTS "
+        f"FOR (n:{NodeLabel.INJURY}) REQUIRE n.id IS UNIQUE"
     )
     for label in (
         NodeLabel.MUSCLE,
@@ -171,7 +184,112 @@ def _merge_stresses(session: Session, exercises: list[Exercise]) -> None:
     )
 
 
-def build_kg1(session: Session, exercises_path: Path, anatomy_path: Path) -> BuildReport:
+def _merge_injuries(
+    session: Session,
+    injuries: list[Injury],
+    conditions: list[Condition],
+) -> None:
+    """Create injuries, the joint each sits at, and its contraindication edges.
+
+    Every edge count is checked against what was requested. An unresolved
+    contraindication is the dangerous failure in this graph: the build looks
+    healthy, and the filter silently permits a movement a clinician ruled out.
+
+    Args:
+        session: An open Neo4j session.
+        injuries: Injuries recorded for the member.
+        conditions: Authored rules, keyed by clinical condition.
+
+    Raises:
+        ValueError: If an injury names a condition with no authored rules, if
+            its joint is not in the anatomy hierarchy, or if a rule names a
+            movement pattern the catalog does not have.
+    """
+    by_condition = {condition.condition: condition for condition in conditions}
+    if unknown := sorted({i.condition for i in injuries} - by_condition.keys()):
+        raise ValueError(f"injuries name conditions with no authored rules: {unknown}")
+
+    session.run(
+        f"""
+        UNWIND $rows AS row
+        MERGE (i:{NodeLabel.INJURY} {{id: row.id}})
+        SET i += row, i.source = $source
+        """,
+        rows=[
+            {
+                "id": injury.id,
+                "region": injury.region,
+                "joint": injury.joint,
+                "side": injury.side,
+                "status": injury.status.value,
+                "severity": injury.severity.value,
+                "since": injury.since.isoformat(),
+                "notes": injury.notes,
+                "condition": injury.condition,
+                "snomed_code": by_condition[injury.condition].snomed_code,
+                "snomed_term": by_condition[injury.condition].snomed_term,
+            }
+            for injury in injuries
+        ],
+        source=GraphSource.KG1.value,
+    )
+
+    affected = session.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (i:{NodeLabel.INJURY} {{id: row.id}})
+        MATCH (a:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.joint, tier: $tier}})
+        MERGE (i)-[:{RelType.AFFECTS}]->(a)
+        RETURN count(*) AS linked
+        """,
+        rows=[{"id": injury.id, "joint": injury.joint} for injury in injuries],
+        tier=AnatomicalTier.JOINT.value,
+    ).single()["linked"]
+
+    if affected != len(injuries):
+        raise ValueError(
+            f"affects resolved {affected} of {len(injuries)} injuries — a joint is "
+            f"missing from the anatomy hierarchy"
+        )
+
+    # One statement per relation, because a relationship type cannot be a query
+    # parameter. Both carry the authored rationale onto the edge, which is what
+    # a provenance trace reads to explain a filtered exercise.
+    for relation in (RelType.CONTRAINDICATES, RelType.CAUTIONS):
+        rows = [
+            {"injury_id": injury.id, "pattern": rule.pattern, "rationale": rule.rationale}
+            for injury in injuries
+            for rule in by_condition[injury.condition].rules
+            if rule.relation == relation
+        ]
+        if not rows:
+            continue
+        linked = session.run(
+            f"""
+            UNWIND $rows AS row
+            MATCH (i:{NodeLabel.INJURY} {{id: row.injury_id}})
+            MATCH (p:{NodeLabel.MOVEMENT_PATTERN} {{name: row.pattern}})
+            MERGE (i)-[r:{relation}]->(p)
+            SET r.rationale = row.rationale
+            RETURN count(*) AS linked
+            """,
+            rows=rows,
+        ).single()["linked"]
+
+        if linked != len(rows):
+            raise ValueError(
+                f"{relation} resolved {linked} of {len(rows)} rules — a rule names a "
+                f"movement pattern the catalog does not have"
+            )
+
+
+def build_kg1(
+    session: Session,
+    exercises_path: Path,
+    anatomy_path: Path,
+    member_context_path: Path,
+    contraindications_path: Path,
+) -> BuildReport:
     """Build the movement/clinical graph.
 
     Idempotent: every write is a `MERGE`, so re-running against a populated
@@ -183,18 +301,23 @@ def build_kg1(session: Session, exercises_path: Path, anatomy_path: Path) -> Bui
         session: An open Neo4j session.
         exercises_path: Location of `exercises.json`.
         anatomy_path: Location of the authored `anatomy.json`.
+        member_context_path: Location of `member-context.json`, read for its
+            injuries only — the rest of the member is KG2's.
+        contraindications_path: Location of the authored rules.
 
     Returns:
         Node and edge counts read back from the store after the build.
 
     Raises:
-        FileNotFoundError: If either source file is missing.
+        FileNotFoundError: If a source file is missing.
         pydantic.ValidationError: If a row does not match the expected shape.
-        ValueError: If the anatomy hierarchy is severed, or the catalog names a
-            joint that anatomy.json does not.
+        ValueError: If the anatomy hierarchy is severed, the catalog names a
+            joint anatomy.json does not, or a contraindication fails to resolve.
     """
     exercises = load_exercises(exercises_path)
     structures = load_anatomy(anatomy_path)
+    injuries = load_injuries(member_context_path)
+    conditions = load_conditions(contraindications_path)
 
     _apply_constraints(session)
     _merge_exercises(session, exercises)
@@ -219,5 +342,7 @@ def build_kg1(session: Session, exercises_path: Path, anatomy_path: Path) -> Bui
         [(ex.id, term) for ex in exercises for term in ex.movement_patterns],
     )
     _merge_stresses(session, exercises)
+    # Last: affects needs the joints, contraindications need the patterns.
+    _merge_injuries(session, injuries, conditions)
 
     return read_report(session)

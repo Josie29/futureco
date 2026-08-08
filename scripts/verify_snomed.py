@@ -5,7 +5,9 @@ import urllib.request
 from pathlib import Path
 
 EVS_BASE = "https://api-evsrest.nci.nih.gov/api/v1/concept/snomedct_us"
-ANATOMY_PATH = Path(__file__).resolve().parents[1] / "data" / "authored" / "anatomy.json"
+AUTHORED_DIR = Path(__file__).resolve().parents[1] / "data" / "authored"
+# Every authored file whose rows carry a `snomed_query` to be grounded.
+SOURCES = (AUTHORED_DIR / "anatomy.json", AUTHORED_DIR / "contraindications.json")
 
 
 def _search(term: str, match_type: str | None) -> tuple[str, str] | None:
@@ -51,7 +53,7 @@ def resolve(term: str) -> tuple[str, str, str] | None:
 
 
 def main() -> int:
-    """Resolve every anatomy row against SNOMED CT and write the codes back.
+    """Resolve every authored `snomed_query` against SNOMED CT, writing codes back.
 
     Re-running is also the verification pass: an already-populated file is
     rewritten with whatever EVS returns today, so a drifted code or a renamed
@@ -60,26 +62,31 @@ def main() -> int:
     Returns:
         0 if every row resolved, 1 if any did not.
     """
-    rows = json.loads(ANATOMY_PATH.read_text())
     unresolved: list[str] = []
+    resolved = 0
 
-    for row in rows:
-        match = resolve(row["snomed_query"])
-        if match is None:
-            unresolved.append(row["name"])
-            row["snomed_code"] = None
-            row["snomed_term"] = None
-            continue
-        row["snomed_code"], row["snomed_term"], strategy = match
-        flag = "" if strategy == "exact" else f"  <- {strategy}"
-        print(f"  {row['name']:<30} {row['snomed_code']:<12} {row['snomed_term']}{flag}")
-
-    ANATOMY_PATH.write_text(json.dumps(rows, indent=2) + "\n")
+    for path in SOURCES:
+        rows = json.loads(path.read_text())
+        print(f"{path.name}")
+        for row in rows:
+            # Rows are keyed by `name` in anatomy, `condition` in
+            # contraindications; both are the human-readable label.
+            label = row.get("name") or row["condition"]
+            match = resolve(row["snomed_query"])
+            if match is None:
+                unresolved.append(label)
+                row["snomed_code"] = row["snomed_term"] = None
+                continue
+            row["snomed_code"], row["snomed_term"], strategy = match
+            flag = "" if strategy == "exact" else f"  <- {strategy}"
+            print(f"  {label:<30} {row['snomed_code']:<12} {row['snomed_term']}{flag}")
+            resolved += 1
+        path.write_text(json.dumps(rows, indent=2) + "\n")
 
     if unresolved:
         print(f"\nunresolved ({len(unresolved)}): {', '.join(unresolved)}", file=sys.stderr)
         return 1
-    print(f"\nresolved all {len(rows)} structures")
+    print(f"\nresolved all {resolved} concepts")
     return 0
 
 

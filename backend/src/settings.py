@@ -27,5 +27,15 @@ class Settings(BaseSettings):
         """Path to the authored anatomy hierarchy, grounded in SNOMED CT."""
         return self.data_dir / "authored" / "anatomy.json"
 
+    @property
+    def contraindications_path(self) -> Path:
+        """Path to the authored condition-to-pattern contraindication rules."""
+        return self.data_dir / "authored" / "contraindications.json"
+
+    @property
+    def member_context_path(self) -> Path:
+        """Path to the sample member, which KG1 reads for injuries only."""
+        return self.data_dir / "member-context.json"
+
 
 settings = Settings()
