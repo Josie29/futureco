@@ -29,6 +29,7 @@ class RelType(StrEnum):
     STRESSES = "stresses"
     REQUIRES = "requires"
     IS_A = "is_a"
+    PART_OF = "part_of"
 
 
 class AnatomicalTier(StrEnum):

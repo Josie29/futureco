@@ -22,5 +22,10 @@ class Settings(BaseSettings):
         """Path to the exercise catalog that KG1 is derived from."""
         return self.data_dir / "exercises.json"
 
+    @property
+    def anatomy_path(self) -> Path:
+        """Path to the authored anatomy hierarchy, grounded in SNOMED CT."""
+        return self.data_dir / "authored" / "anatomy.json"
+
 
 settings = Settings()

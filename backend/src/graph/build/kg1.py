@@ -2,7 +2,7 @@ from pathlib import Path
 
 from neo4j import Session
 
-from graph.build.catalog import Exercise, load_exercises
+from graph.build.catalog import AnatomicalStructure, Exercise, load_anatomy, load_exercises
 from graph.build.report import BuildReport, read_report
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
 
@@ -50,59 +50,156 @@ def _merge_links(
     label: NodeLabel,
     rel: RelType,
     pairs: list[tuple[str, str]],
-    tier: AnatomicalTier | None = None,
 ) -> None:
     """Create the taxonomy nodes exercises name, and the edges reaching them.
 
-    Every taxonomy node exists because some exercise names it, so the node and
-    the edge to it are merged in a single statement.
+    Every muscle, equipment, and pattern node exists because some exercise
+    names it, so the node and the edge to it are merged in a single statement.
+    Anatomy is the exception — it is authored, so `_merge_stresses` matches
+    rather than creates.
 
     Args:
         session: An open Neo4j session.
         label: Label to give the taxonomy nodes.
         rel: Edge type running from exercise to taxonomy node.
         pairs: `(exercise_id, term)` for every term an exercise names.
-        tier: Anatomical tier to record on the node. `None` leaves the property
-            absent, because assigning null in Cypher sets nothing.
     """
     session.run(
         f"""
         UNWIND $rows AS row
         MATCH (e:{NodeLabel.EXERCISE} {{id: row.exercise_id}})
         MERGE (t:{label} {{name: row.term}})
-        SET t.source = $source, t.tier = $tier
+        SET t.source = $source
         MERGE (e)-[:{rel}]->(t)
         """,
         rows=[{"exercise_id": exercise_id, "term": term} for exercise_id, term in pairs],
         source=GraphSource.KG1.value,
-        tier=tier.value if tier else None,
     )
 
 
-def build_kg1(session: Session, exercises_path: Path) -> BuildReport:
-    """Build the movement/clinical graph from the exercise catalog.
+def _merge_anatomy(session: Session, structures: list[AnatomicalStructure]) -> None:
+    """Create the authored anatomy hierarchy and its `part_of` containment.
+
+    The nine joints the catalog names are already present; merging by name
+    binds those nodes and adds their SNOMED grounding rather than duplicating.
+
+    Args:
+        session: An open Neo4j session.
+        structures: Every authored structure.
+
+    Raises:
+        ValueError: If a `part_of` parent names a structure that does not
+            exist. A dangling parent would leave the hierarchy quietly severed,
+            and a severed hierarchy returns too few exercises rather than
+            erroring, so it has to fail here.
+    """
+    session.run(
+        f"""
+        UNWIND $rows AS row
+        MERGE (a:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.name}})
+        SET a.tier = row.tier,
+            a.snomed_code = row.snomed_code,
+            a.snomed_term = row.snomed_term,
+            a.source = $source
+        """,
+        rows=[s.model_dump(mode="json") for s in structures],
+        source=GraphSource.KG1.value,
+    )
+
+    pairs = [(s.name, s.part_of) for s in structures if s.part_of]
+    linked = session.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (child:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.child}})
+        MATCH (parent:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.parent}})
+        MERGE (child)-[:{RelType.PART_OF}]->(parent)
+        RETURN count(*) AS linked
+        """,
+        rows=[{"child": child, "parent": parent} for child, parent in pairs],
+    ).single()["linked"]
+
+    if linked != len(pairs):
+        raise ValueError(
+            f"part_of resolved {linked} of {len(pairs)} edges — a parent name in "
+            f"anatomy.json does not match any structure"
+        )
+
+
+def _merge_stresses(session: Session, exercises: list[Exercise]) -> None:
+    """Connect each exercise to the joints it loads.
+
+    Matches rather than merges, and pins the match to the joint tier: anatomy
+    is authored, so a term the catalog names must already exist, and `stresses`
+    may only ever reach a joint.
+
+    Args:
+        session: An open Neo4j session.
+        exercises: Every catalog row.
+
+    Raises:
+        ValueError: If the catalog names a joint absent from `anatomy.json`.
+            Merging instead would invent an ungrounded node; matching silently
+            would drop the edge and quietly widen what the injury filter allows.
+    """
+    named = sorted({joint for ex in exercises for joint in ex.joints_loaded})
+    found = session.run(
+        f"""
+        MATCH (a:{NodeLabel.ANATOMICAL_STRUCTURE} {{tier: $tier}})
+        WHERE a.name IN $names
+        RETURN collect(a.name) AS found
+        """,
+        names=named,
+        tier=AnatomicalTier.JOINT.value,
+    ).single()["found"]
+
+    if missing := sorted(set(named) - set(found)):
+        raise ValueError(f"catalog joints missing from anatomy.json: {missing}")
+
+    session.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (e:{NodeLabel.EXERCISE} {{id: row.exercise_id}})
+        MATCH (a:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.term, tier: $tier}})
+        MERGE (e)-[:{RelType.STRESSES}]->(a)
+        """,
+        rows=[
+            {"exercise_id": ex.id, "term": joint}
+            for ex in exercises
+            for joint in ex.joints_loaded
+        ],
+        tier=AnatomicalTier.JOINT.value,
+    )
+
+
+def build_kg1(session: Session, exercises_path: Path, anatomy_path: Path) -> BuildReport:
+    """Build the movement/clinical graph.
 
     Idempotent: every write is a `MERGE`, so re-running against a populated
-    store converges rather than duplicating. Constraints are applied first, or
-    the merges below degrade to full label scans.
+    store converges rather than duplicating. Order is load-bearing — constraints
+    first, or the merges degrade to full label scans; anatomy before `stresses`,
+    which matches the joints it creates.
 
     Args:
         session: An open Neo4j session.
         exercises_path: Location of `exercises.json`.
+        anatomy_path: Location of the authored `anatomy.json`.
 
     Returns:
         Node and edge counts read back from the store after the build.
 
     Raises:
-        FileNotFoundError: If the catalog is missing.
-        pydantic.ValidationError: If a catalog row does not match the expected shape.
+        FileNotFoundError: If either source file is missing.
+        pydantic.ValidationError: If a row does not match the expected shape.
+        ValueError: If the anatomy hierarchy is severed, or the catalog names a
+            joint that anatomy.json does not.
     """
     exercises = load_exercises(exercises_path)
+    structures = load_anatomy(anatomy_path)
+
     _apply_constraints(session)
     _merge_exercises(session, exercises)
+    _merge_anatomy(session, structures)
 
-    # These four calls are the whole of KG1 v0 — every node and edge is derived
-    # from the catalog, nothing is authored yet.
     _merge_links(
         session,
         NodeLabel.MUSCLE,
@@ -121,16 +218,6 @@ def build_kg1(session: Session, exercises_path: Path) -> BuildReport:
         RelType.IS_A,
         [(ex.id, term) for ex in exercises for term in ex.movement_patterns],
     )
-    # The catalog only names joints, so `stresses` reaching a joint holds by
-    # construction here. Once regions and sub-structures are authored, this
-    # MERGE could bind a non-joint node on a name collision — it will need to
-    # match on `tier` explicitly then.
-    _merge_links(
-        session,
-        NodeLabel.ANATOMICAL_STRUCTURE,
-        RelType.STRESSES,
-        [(ex.id, term) for ex in exercises for term in ex.joints_loaded],
-        tier=AnatomicalTier.JOINT,
-    )
+    _merge_stresses(session, exercises)
 
     return read_report(session)

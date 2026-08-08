@@ -1,0 +1,218 @@
+[
+  {
+    "name": "lower body",
+    "tier": "region",
+    "part_of": null,
+    "snomed_query": "lower body",
+    "snomed_code": "128263001",
+    "snomed_term": "Lower body structure"
+  },
+  {
+    "name": "upper body",
+    "tier": "region",
+    "part_of": null,
+    "snomed_query": "upper body",
+    "snomed_code": "128262006",
+    "snomed_term": "Upper body structure"
+  },
+  {
+    "name": "trunk",
+    "tier": "region",
+    "part_of": null,
+    "snomed_query": "trunk",
+    "snomed_code": "22943007",
+    "snomed_term": "Trunk structure"
+  },
+  {
+    "name": "lower limb",
+    "tier": "region",
+    "part_of": "lower body",
+    "snomed_query": "lower limb",
+    "snomed_code": "61685007",
+    "snomed_term": "Lower limb structure"
+  },
+  {
+    "name": "upper limb",
+    "tier": "region",
+    "part_of": "upper body",
+    "snomed_query": "upper limb",
+    "snomed_code": "53120007",
+    "snomed_term": "Upper limb structure"
+  },
+  {
+    "name": "spine",
+    "tier": "region",
+    "part_of": "trunk",
+    "snomed_query": "vertebral column",
+    "snomed_code": "421060004",
+    "snomed_term": "Structure of vertebral column"
+  },
+  {
+    "name": "hip",
+    "tier": "joint",
+    "part_of": "lower limb",
+    "snomed_query": "hip joint",
+    "snomed_code": "24136001",
+    "snomed_term": "Hip joint structure"
+  },
+  {
+    "name": "knee",
+    "tier": "joint",
+    "part_of": "lower limb",
+    "snomed_query": "knee joint",
+    "snomed_code": "49076000",
+    "snomed_term": "Knee joint structure"
+  },
+  {
+    "name": "ankle",
+    "tier": "joint",
+    "part_of": "lower limb",
+    "snomed_query": "ankle joint",
+    "snomed_code": "70258002",
+    "snomed_term": "Ankle joint structure"
+  },
+  {
+    "name": "shoulder",
+    "tier": "joint",
+    "part_of": "upper limb",
+    "snomed_query": "shoulder joint",
+    "snomed_code": "85537004",
+    "snomed_term": "Glenohumeral joint structure"
+  },
+  {
+    "name": "elbow",
+    "tier": "joint",
+    "part_of": "upper limb",
+    "snomed_query": "elbow joint",
+    "snomed_code": "16953009",
+    "snomed_term": "Elbow joint structure"
+  },
+  {
+    "name": "wrist",
+    "tier": "joint",
+    "part_of": "upper limb",
+    "snomed_query": "wrist joint",
+    "snomed_code": "74670003",
+    "snomed_term": "Wrist joint structure"
+  },
+  {
+    "name": "cervical spine",
+    "tier": "joint",
+    "part_of": "spine",
+    "snomed_query": "cervical spine joint",
+    "snomed_code": "129167000",
+    "snomed_term": "Cervical spine joint structure"
+  },
+  {
+    "name": "thoracic spine",
+    "tier": "joint",
+    "part_of": "spine",
+    "snomed_query": "thoracic spine joint",
+    "snomed_code": "34449008",
+    "snomed_term": "Thoracic spine joint structure"
+  },
+  {
+    "name": "lumbar spine",
+    "tier": "joint",
+    "part_of": "spine",
+    "snomed_query": "lumbar spine joint",
+    "snomed_code": "8454000",
+    "snomed_term": "Lumbar spine joint structure"
+  },
+  {
+    "name": "patellofemoral joint",
+    "tier": "substructure",
+    "part_of": "knee",
+    "snomed_query": "patellofemoral joint",
+    "snomed_code": "129160003",
+    "snomed_term": "Structure of patellofemoral joint"
+  },
+  {
+    "name": "patellar tendon",
+    "tier": "substructure",
+    "part_of": "knee",
+    "snomed_query": "patellar ligament",
+    "snomed_code": "18033002",
+    "snomed_term": "Structure of patellar ligament"
+  },
+  {
+    "name": "anterior cruciate ligament",
+    "tier": "substructure",
+    "part_of": "knee",
+    "snomed_query": "anterior cruciate ligament",
+    "snomed_code": "895007",
+    "snomed_term": "Structure of anterior cruciate ligament of knee joint"
+  },
+  {
+    "name": "medial collateral ligament",
+    "tier": "substructure",
+    "part_of": "knee",
+    "snomed_query": "medial collateral ligament of knee",
+    "snomed_code": "1627004",
+    "snomed_term": "Structure of medial collateral ligament of knee joint"
+  },
+  {
+    "name": "medial meniscus",
+    "tier": "substructure",
+    "part_of": "knee",
+    "snomed_query": "medial meniscus",
+    "snomed_code": "49390008",
+    "snomed_term": "Medial meniscus structure"
+  },
+  {
+    "name": "rotator cuff",
+    "tier": "substructure",
+    "part_of": "shoulder",
+    "snomed_query": "rotator cuff including muscles and tendons",
+    "snomed_code": "7885001",
+    "snomed_term": "Structure of rotator cuff including muscles and tendons"
+  },
+  {
+    "name": "glenoid labrum",
+    "tier": "substructure",
+    "part_of": "shoulder",
+    "snomed_query": "glenoid labrum",
+    "snomed_code": "86721001",
+    "snomed_term": "Structure of glenoid labrum"
+  },
+  {
+    "name": "common extensor tendon",
+    "tier": "substructure",
+    "part_of": "elbow",
+    "snomed_query": "common extensor tendon",
+    "snomed_code": "1052260001",
+    "snomed_term": "Structure of common extensor tendon"
+  },
+  {
+    "name": "achilles tendon",
+    "tier": "substructure",
+    "part_of": "ankle",
+    "snomed_query": "achilles tendon",
+    "snomed_code": "61352006",
+    "snomed_term": "Structure of Achilles tendon"
+  },
+  {
+    "name": "anterior talofibular ligament",
+    "tier": "substructure",
+    "part_of": "ankle",
+    "snomed_query": "anterior talofibular ligament",
+    "snomed_code": "14719001",
+    "snomed_term": "Structure of anterior talofibular ligament"
+  },
+  {
+    "name": "lumbar intervertebral disc",
+    "tier": "substructure",
+    "part_of": "lumbar spine",
+    "snomed_query": "lumbar intervertebral disc",
+    "snomed_code": "23526008",
+    "snomed_term": "Structure of lumbar intervertebral disc"
+  },
+  {
+    "name": "erector spinae",
+    "tier": "substructure",
+    "part_of": "spine",
+    "snomed_query": "erector spinae muscle",
+    "snomed_code": "44947003",
+    "snomed_term": "Structure of erector spinae muscle"
+  }
+]

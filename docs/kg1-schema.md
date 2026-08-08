@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `Exercise` | 50 | `data/exercises.json` | Performable catalog item; carries sets/reps into a plan |
 | `Muscle` | 19 | data — `muscle_groups` | Tissue doing the work |
-| `AnatomicalStructure` | ~28 | 9 joints from `joints_loaded`; regions and sub-structures authored, SNOMED-grounded | One self-nesting hierarchy via `part_of`. `tier` property = `region` \| `joint` \| `substructure`. **Invariant: `stresses` only ever targets `tier: joint`** |
+| `AnatomicalStructure` | 27 | `data/authored/anatomy.json` — 6 regions, 9 joints, 12 sub-structures. The 9 joints are the ones `joints_loaded` names; every row carries a SNOMED CT code resolved by `scripts/verify_snomed.py` | One self-nesting hierarchy via `part_of`. `tier` property = `region` \| `joint` \| `substructure`. **Invariant: `stresses` only ever targets `tier: joint`**, pinned in the MATCH |
 | `MovementPattern` | 36 | data — `movement_patterns` | Kinematic class; the substitution axis |
 | `Equipment` | 32 | data — `equipment_required` | |
 | `Injury` | 1 (sample) | `data/member-context.json` — `injuries[]` | Holds `status`, `severity`, `side` (from `region: "left knee"`), and `snomedct_hint`. Origin of both contraindication edges |
