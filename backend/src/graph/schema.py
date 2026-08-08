@@ -23,7 +23,6 @@ class NodeLabel(StrEnum):
     INJURY = "Injury"
     CONDITION = "Condition"
     MEMBER = "Member"
-    PREFERENCE = "Preference"
     GOAL = "Goal"
 
 

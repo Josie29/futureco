@@ -7,13 +7,11 @@ from graph.build.writes import EdgeWrite, NodeMatch, link_nodes, link_required, 
 from graph.schema import GraphSource, NodeLabel, RelType
 
 _MEMBER = NodeMatch(label=NodeLabel.MEMBER, key="id")
-_PREFERENCE = NodeMatch(label=NodeLabel.PREFERENCE, key="id")
 _GOAL = NodeMatch(label=NodeLabel.GOAL, key="id")
 
-# `has` is one edge type reaching four labels: the target's label already says
+# `has` is one edge type reaching three labels: the target's label already says
 # what the relation means, so a `has_goal` / `has_equipment` prefix would only
 # restate it. See docs/decisions.md, KG2 decision 1.
-_HAS_PREFERENCE = EdgeWrite(rel=RelType.HAS, source=_MEMBER, target=_PREFERENCE)
 _HAS_GOAL = EdgeWrite(rel=RelType.HAS, source=_MEMBER, target=_GOAL)
 _HAS_EQUIPMENT = EdgeWrite(
     rel=RelType.HAS, source=_MEMBER, target=NodeMatch(label=NodeLabel.EQUIPMENT)
@@ -25,75 +23,24 @@ _TARGETS = EdgeWrite(
     rel=RelType.TARGETS, source=_GOAL, target=NodeMatch(label=NodeLabel.MUSCLE)
 )
 _DISLIKES = EdgeWrite(
-    rel=RelType.DISLIKES, source=_PREFERENCE, target=NodeMatch(label=NodeLabel.EXERCISE)
+    rel=RelType.DISLIKES, source=_MEMBER, target=NodeMatch(label=NodeLabel.EXERCISE)
 )
 
-# The preference whose value is a list of exercises the member would rather not
-# do. It is the only preference that carries an edge out of KG2.
+# The only key of `preferences` the graph models. The rest — session length,
+# training days, free-text notes — are scalar facts with no edge to carry, so
+# they stay in member-context.json for the copilot to read directly.
 DISLIKES_KEY = "dislikes"
-
-
-def _preference_id(member_id: str, key: str) -> str:
-    """Build a preference's identity.
-
-    Preferences are one node per key *per member*, so the member has to be part
-    of the identity. Neo4j Community only enforces uniqueness on a single
-    property, so the two are composed rather than declared as a node key.
-
-    Args:
-        member_id: Owning member.
-        key: Preference name, such as `training_days_per_week`.
-
-    Returns:
-        An id such as `mbr_01HX9JORDAN:dislikes`.
-    """
-    return f"{member_id}:{key}"
 
 
 def _apply_constraints(session: Session) -> None:
     """Declare uniqueness constraints for the labels KG2 creates."""
     # Labels and property keys cannot be query parameters in Cypher, so they are
     # interpolated. Values come from the NodeLabel enum, never from input data.
-    for label in (NodeLabel.MEMBER, NodeLabel.PREFERENCE, NodeLabel.GOAL):
+    for label in (NodeLabel.MEMBER, NodeLabel.GOAL):
         session.run(
             f"CREATE CONSTRAINT {label.lower()}_id IF NOT EXISTS "
             f"FOR (n:{label}) REQUIRE n.id IS UNIQUE"
         )
-
-
-def _build_preferences(session: Session, context: MemberContext) -> None:
-    """Create one `Preference` node per recorded key.
-
-    One node per key rather than one node with five properties, because
-    `dislikes` has to carry an edge into KG1's `Exercise` and the rest are
-    scalar constraints. Splitting keeps that edge attachable without a special
-    case. The raw value stays on every node, `dislikes` included, so a
-    preference the catalog cannot express is still recorded.
-    """
-    member_id = context.profile.id
-    merge_nodes(
-        session,
-        NodeLabel.PREFERENCE,
-        "id",
-        [
-            {
-                "id": _preference_id(member_id, key),
-                "member_id": member_id,
-                "key": key,
-                "value": value,
-            }
-            for key, value in context.preferences.items()
-        ],
-        GraphSource.KG2,
-    )
-    link_required(
-        session,
-        _HAS_PREFERENCE,
-        [
-            {"source": member_id, "target": _preference_id(member_id, key)}
-            for key in context.preferences
-        ],
-    )
 
 
 def _build_goals(session: Session, context: MemberContext) -> None:
@@ -135,7 +82,7 @@ def _build_goals(session: Session, context: MemberContext) -> None:
 
 
 def _link_dislikes(session: Session, context: MemberContext) -> list[str]:
-    """Point the `dislikes` preference at the exercises it names.
+    """Point the member at the exercises `preferences.dislikes` names.
 
     Unlike every other join in either graph, an unmatched name here is not a
     defect. A member may dislike a movement this catalog does not stock, and
@@ -153,19 +100,19 @@ def _link_dislikes(session: Session, context: MemberContext) -> list[str]:
     if not isinstance(disliked, list):
         return []
 
-    source = _preference_id(context.profile.id, DISLIKES_KEY)
-    rows = [{"source": source, "target": name} for name in disliked]
+    member_id = context.profile.id
+    rows = [{"source": member_id, "target": name} for name in disliked]
     linked = link_nodes(session, _DISLIKES, rows)
     if linked == len(rows):
         return []
 
     matched = session.run(
         f"""
-        MATCH (:{NodeLabel.PREFERENCE} {{id: $source}})
+        MATCH (:{NodeLabel.MEMBER} {{id: $member_id}})
               -[:{RelType.DISLIKES}]->(e:{NodeLabel.EXERCISE})
         RETURN collect(e.name) AS names
         """,
-        source=source,
+        member_id=member_id,
     ).single()["names"]
     return sorted(set(disliked) - set(matched))
 
@@ -202,7 +149,6 @@ def build_kg2(session: Session, member_context_path: Path) -> list[str]:
         [context.profile.model_dump(mode="json")],
         GraphSource.KG2,
     )
-    _build_preferences(session, context)
     _build_goals(session, context)
 
     link_required(
