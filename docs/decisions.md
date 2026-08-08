@@ -22,21 +22,7 @@ Deviations from the starting schema in `ASSESSMENT.md:54-56`:
 
 *2026-08-08*
 
-**Decision.** One store, two logical subgraphs: separate schemas, separate builders, separate docs. Every node carries `source: kg1 | kg2`. Shared nodes (`Equipment`, `Exercise`, `Muscle`, `Injury`) exist once — KG2's builder resolves against KG1 nodes by name rather than creating its own.
+**One physical graph, two logical subgraphs.** Separate schemas, separate builders, separate docs; one store, with `source: kg1 | kg2` on every node.
 
-**Why.**
-
-- **Every useful query crosses the seam.** `Member -has-> Equipment <-requires- Exercise -is_a-> Pattern <-contraindicates- Injury <-has- Member` is one traversal merged; split, it's four round-trips plus set intersection in app code — a join engine rebuilt by hand.
-- **`Injury` straddles.** Declared in KG2 (member self-report), but its `contraindicates` / `cautions` edges are KG1 clinical knowledge. Two stores force an owner, and either choice strands an edge without both endpoints.
-- The genuine arguments for splitting — different lifecycles (KG1 static and shared across members, KG2 per-member and mutable), different provenance (SNOMED-grounded vs. free-text-derived), per-member deletion — are all served by `source` plus member-scoped IDs, at no traversal cost.
-
-**Consequences.**
-
-- Build order is fixed: KG1 first, KG2 resolves against it.
-- Name resolution is the failure surface. A silent no-match yields a disconnected graph that looks healthy and returns empty results, so unmatched names are collected and reported at build time, never skipped.
-
-| Join | Key | Risk |
-|---|---|---|
-| `equipment_available[]` → `Equipment` | name | Spelling drift vs. catalog |
-| `preferences.dislikes[]` → `Exercise` | name | `"Burpees"` may have **no catalog entry** — likeliest miss |
-| `goals[].targets[]` → `Muscle` | name | Empty list is valid — no match attempted, not a failure |
+- **Every useful query crosses the seam.** `Member -has-> Equipment <-requires- Exercise -is_a-> Pattern <-contraindicates- Injury <-has- Member` is one traversal merged; split, it's four round-trips plus set intersection in app code.
+- **Both graphs reference the same node sets** — `Equipment`, `Exercise`, `Muscle`, `Injury`. Two stores means two copies to keep in sync, so these exist once: KG2's builder resolves against KG1 nodes by name rather than creating its own, and reports unmatched names at build time. A silent no-match yields a graph that looks healthy and returns nothing.
