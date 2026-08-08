@@ -9,7 +9,8 @@
 | `AnatomicalStructure` | 27 | `data/authored/anatomy.json` — 6 regions, 9 joints, 12 sub-structures. The 9 joints are the ones `joints_loaded` names; every row carries a SNOMED CT code resolved by `scripts/verify_snomed.py` | One self-nesting hierarchy via `part_of`. `tier` property = `region` \| `joint` \| `substructure`. **Invariant: `stresses` only ever targets `tier: joint`**, pinned in the MATCH |
 | `MovementPattern` | 36 | data — `movement_patterns` | Kinematic class; the substitution axis |
 | `Equipment` | 32 | data — `equipment_required` | |
-| `Injury` | 1 (sample) | `data/member-context.json` — `injuries[]` | Holds `status`, `severity`, `side` (derived: `region` minus `joint`), and `condition`. The condition carries the SNOMED code, since that is the clinical entity the rules attach to. Origin of both contraindication edges |
+| `Injury` | 1 (sample) | `data/member-context.json` — `injuries[]` | **This member's case**, and only that: `region`, `joint`, `side` (derived: `region` minus `joint`), `status`, `severity`, `since`, `notes` |
+| `Condition` | 1 (sample) | `data/authored/contraindications.json` | **The clinical entity**, and what it implies for movement. Holds the SNOMED code, because the condition is what SNOMED names — an injury is an instance of one. Origin of both contraindication edges |
 
 ---
 
@@ -22,8 +23,9 @@
 | `requires` | Exercise → Equipment | spec + data | Availability filter |
 | `is_a` | Exercise → MovementPattern | **added** | Spec lists the node type but no edge to it — without this, pattern nodes are orphans and substitution is impossible |
 | `part_of` | AnatomicalStructure → AnatomicalStructure | spec; hierarchy authored from SNOMED | Self-nesting. Granularity bridging, traversed in both directions |
-| `contraindicates` | Injury → Pattern \| Exercise | spec (`contraindicated-for`), split. Rules in `data/authored/contraindications.json`, keyed by condition | **Hard exclude**. Carries `rationale` for the provenance trace |
-| `cautions` | Injury → Pattern \| Exercise | **added** (other half of the split), same source | **Soft penalty** — relative contraindication. Carries `rationale` |
+| `diagnosed_as` | Injury → Condition | **added** — `injuries[].condition` in member context | Joins a member's case to the clinical knowledge about it. Named rather than reusing `is_a`, which already means classification for `Exercise → MovementPattern` |
+| `contraindicates` | Condition → Pattern \| Exercise | spec (`contraindicated-for`), split. Rules in `data/authored/contraindications.json` | **Hard exclude**. Carries `rationale` for the provenance trace |
+| `cautions` | Condition → Pattern \| Exercise | **added** (other half of the split), same source | **Soft penalty** — relative contraindication. Carries `rationale` |
 | `affects` | Injury → AnatomicalStructure `[tier: joint]` | **added** — `injuries[].joint` in member context | Anatomical reference only. **Never traversed to filter** — it records where an injury sits so a resolved anatomy term can be tied back to it |
 
 ---
@@ -37,6 +39,7 @@ flowchart LR
   EQP["Equipment<br/>32"]
   PAT["MovementPattern<br/>36"]
   INJ["Injury<br/>status · severity · side"]
+  CON["Condition<br/>SNOMED-coded"]
   ANAT["AnatomicalStructure<br/>~28<br/>tier: region | joint | substructure"]
 
   ANAT -->|part_of| ANAT
@@ -46,8 +49,9 @@ flowchart LR
   EX -->|is_a| PAT
   EX -->|"stresses<br/>(tier: joint only)"| ANAT
 
-  INJ -->|contraindicates| PAT
-  INJ -->|cautions| PAT
+  INJ -->|diagnosed_as| CON
+  CON -->|contraindicates| PAT
+  CON -->|cautions| PAT
   INJ -.->|"affects<br/>(reference only)"| ANAT
 
   style ANAT fill:#1f3a2d,stroke:#5a9a7a,color:#e8f0ea

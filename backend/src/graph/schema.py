@@ -21,6 +21,7 @@ class NodeLabel(StrEnum):
     MOVEMENT_PATTERN = "MovementPattern"
     ANATOMICAL_STRUCTURE = "AnatomicalStructure"
     INJURY = "Injury"
+    CONDITION = "Condition"
 
 
 class RelType(StrEnum):
@@ -32,6 +33,7 @@ class RelType(StrEnum):
     IS_A = "is_a"
     PART_OF = "part_of"
     AFFECTS = "affects"
+    DIAGNOSED_AS = "diagnosed_as"
     CONTRAINDICATES = "contraindicates"
     CAUTIONS = "cautions"
 

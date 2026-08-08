@@ -38,6 +38,7 @@ def _apply_constraints(session: Session) -> None:
         NodeLabel.EQUIPMENT,
         NodeLabel.MOVEMENT_PATTERN,
         NodeLabel.ANATOMICAL_STRUCTURE,
+        NodeLabel.CONDITION,
     ):
         session.run(
             f"CREATE CONSTRAINT {label.lower()}_name IF NOT EXISTS "
@@ -184,31 +185,136 @@ def _merge_stresses(session: Session, exercises: list[Exercise]) -> None:
     )
 
 
-def _merge_injuries(
-    session: Session,
-    injuries: list[Injury],
-    conditions: list[Condition],
-) -> None:
-    """Create injuries, the joint each sits at, and its contraindication edges.
+def _merge_conditions(session: Session, conditions: list[Condition]) -> None:
+    """Create clinical conditions and the movement rules that attach to them.
 
-    Every edge count is checked against what was requested. An unresolved
-    contraindication is the dangerous failure in this graph: the build looks
-    healthy, and the filter silently permits a movement a clinician ruled out.
+    The rules hang off the condition rather than off any member's injury: what
+    patellofemoral pain rules out is true of the condition, so it is stated
+    once and every case of it inherits the same edges.
+
+    Args:
+        session: An open Neo4j session.
+        conditions: Authored conditions and their rules.
+
+    Raises:
+        ValueError: If a rule names a movement pattern the catalog does not
+            have. An unresolved contraindication is this graph's worst failure:
+            the build looks healthy, and the filter silently permits a movement
+            a clinician ruled out.
+    """
+    session.run(
+        f"""
+        UNWIND $rows AS row
+        MERGE (c:{NodeLabel.CONDITION} {{name: row.name}})
+        SET c.snomed_code = row.snomed_code,
+            c.snomed_term = row.snomed_term,
+            c.source_note = row.source_note,
+            c.source = $source
+        """,
+        rows=[
+            {
+                "name": condition.condition,
+                "snomed_code": condition.snomed_code,
+                "snomed_term": condition.snomed_term,
+                "source_note": condition.source_note,
+            }
+            for condition in conditions
+        ],
+        source=GraphSource.KG1.value,
+    )
+
+    # One statement per relation, because a relationship type cannot be a query
+    # parameter. Both carry the authored rationale onto the edge, which is what
+    # a provenance trace reads to explain a filtered exercise.
+    for relation in (RelType.CONTRAINDICATES, RelType.CAUTIONS):
+        rows = [
+            {
+                "condition": condition.condition,
+                "pattern": rule.pattern,
+                "rationale": rule.rationale,
+            }
+            for condition in conditions
+            for rule in condition.rules
+            if rule.relation == relation
+        ]
+        if not rows:
+            continue
+        linked = session.run(
+            f"""
+            UNWIND $rows AS row
+            MATCH (c:{NodeLabel.CONDITION} {{name: row.condition}})
+            MATCH (p:{NodeLabel.MOVEMENT_PATTERN} {{name: row.pattern}})
+            MERGE (c)-[r:{relation}]->(p)
+            SET r.rationale = row.rationale
+            RETURN count(*) AS linked
+            """,
+            rows=rows,
+        ).single()["linked"]
+
+        if linked != len(rows):
+            raise ValueError(
+                f"{relation} resolved {linked} of {len(rows)} rules — a rule names a "
+                f"movement pattern the catalog does not have"
+            )
+
+
+def _link_injuries(
+    session: Session,
+    rel: RelType,
+    target_label: NodeLabel,
+    pairs: list[tuple[str, str]],
+    tier: AnatomicalTier | None = None,
+) -> None:
+    """Link injuries to nodes that already exist, failing if any does not.
+
+    Args:
+        session: An open Neo4j session.
+        rel: Edge type running from injury to target.
+        target_label: Label of the node being linked to.
+        pairs: `(injury_id, target_name)` for every edge to create.
+        tier: When given, the target must sit at this anatomical tier.
+
+    Raises:
+        ValueError: If any pair fails to resolve. A missing edge here is silent
+            in the graph and permissive in the filter, so it cannot pass.
+    """
+    # Interpolated from a variable, so the braces are literal Cypher rather
+    # than f-string placeholders.
+    props = "{name: row.target, tier: $tier}" if tier else "{name: row.target}"
+    linked = session.run(
+        f"""
+        UNWIND $rows AS row
+        MATCH (i:{NodeLabel.INJURY} {{id: row.id}})
+        MATCH (t:{target_label} {props})
+        MERGE (i)-[:{rel}]->(t)
+        RETURN count(*) AS linked
+        """,
+        rows=[{"id": injury_id, "target": name} for injury_id, name in pairs],
+        tier=tier.value if tier else None,
+    ).single()["linked"]
+
+    if linked != len(pairs):
+        raise ValueError(
+            f"{rel} resolved {linked} of {len(pairs)} edges — an injury names a "
+            f"{target_label} that does not exist"
+        )
+
+
+def _merge_injuries(session: Session, injuries: list[Injury]) -> None:
+    """Create injuries, and link each to its condition and the joint it sits at.
+
+    An injury carries only what is true of this member's case — laterality,
+    status, severity, when it started. What the condition implies for movement
+    lives on the `Condition` it is diagnosed as.
 
     Args:
         session: An open Neo4j session.
         injuries: Injuries recorded for the member.
-        conditions: Authored rules, keyed by clinical condition.
 
     Raises:
-        ValueError: If an injury names a condition with no authored rules, if
-            its joint is not in the anatomy hierarchy, or if a rule names a
-            movement pattern the catalog does not have.
+        ValueError: If an injury names a condition with no authored rules, or
+            sits at a joint absent from the anatomy hierarchy.
     """
-    by_condition = {condition.condition: condition for condition in conditions}
-    if unknown := sorted({i.condition for i in injuries} - by_condition.keys()):
-        raise ValueError(f"injuries name conditions with no authored rules: {unknown}")
-
     session.run(
         f"""
         UNWIND $rows AS row
@@ -225,62 +331,25 @@ def _merge_injuries(
                 "severity": injury.severity.value,
                 "since": injury.since.isoformat(),
                 "notes": injury.notes,
-                "condition": injury.condition,
-                "snomed_code": by_condition[injury.condition].snomed_code,
-                "snomed_term": by_condition[injury.condition].snomed_term,
             }
             for injury in injuries
         ],
         source=GraphSource.KG1.value,
     )
 
-    affected = session.run(
-        f"""
-        UNWIND $rows AS row
-        MATCH (i:{NodeLabel.INJURY} {{id: row.id}})
-        MATCH (a:{NodeLabel.ANATOMICAL_STRUCTURE} {{name: row.joint, tier: $tier}})
-        MERGE (i)-[:{RelType.AFFECTS}]->(a)
-        RETURN count(*) AS linked
-        """,
-        rows=[{"id": injury.id, "joint": injury.joint} for injury in injuries],
-        tier=AnatomicalTier.JOINT.value,
-    ).single()["linked"]
-
-    if affected != len(injuries):
-        raise ValueError(
-            f"affects resolved {affected} of {len(injuries)} injuries — a joint is "
-            f"missing from the anatomy hierarchy"
-        )
-
-    # One statement per relation, because a relationship type cannot be a query
-    # parameter. Both carry the authored rationale onto the edge, which is what
-    # a provenance trace reads to explain a filtered exercise.
-    for relation in (RelType.CONTRAINDICATES, RelType.CAUTIONS):
-        rows = [
-            {"injury_id": injury.id, "pattern": rule.pattern, "rationale": rule.rationale}
-            for injury in injuries
-            for rule in by_condition[injury.condition].rules
-            if rule.relation == relation
-        ]
-        if not rows:
-            continue
-        linked = session.run(
-            f"""
-            UNWIND $rows AS row
-            MATCH (i:{NodeLabel.INJURY} {{id: row.injury_id}})
-            MATCH (p:{NodeLabel.MOVEMENT_PATTERN} {{name: row.pattern}})
-            MERGE (i)-[r:{relation}]->(p)
-            SET r.rationale = row.rationale
-            RETURN count(*) AS linked
-            """,
-            rows=rows,
-        ).single()["linked"]
-
-        if linked != len(rows):
-            raise ValueError(
-                f"{relation} resolved {linked} of {len(rows)} rules — a rule names a "
-                f"movement pattern the catalog does not have"
-            )
+    _link_injuries(
+        session,
+        RelType.DIAGNOSED_AS,
+        NodeLabel.CONDITION,
+        [(injury.id, injury.condition) for injury in injuries],
+    )
+    _link_injuries(
+        session,
+        RelType.AFFECTS,
+        NodeLabel.ANATOMICAL_STRUCTURE,
+        [(injury.id, injury.joint) for injury in injuries],
+        tier=AnatomicalTier.JOINT,
+    )
 
 
 def build_kg1(
@@ -312,7 +381,9 @@ def build_kg1(
         FileNotFoundError: If a source file is missing.
         pydantic.ValidationError: If a row does not match the expected shape.
         ValueError: If the anatomy hierarchy is severed, the catalog names a
-            joint anatomy.json does not, or a contraindication fails to resolve.
+            joint anatomy.json does not, a contraindication rule names an
+            unknown movement pattern, or an injury names an unknown condition
+            or joint.
     """
     exercises = load_exercises(exercises_path)
     structures = load_anatomy(anatomy_path)
@@ -341,8 +412,10 @@ def build_kg1(
         RelType.IS_A,
         [(ex.id, term) for ex in exercises for term in ex.movement_patterns],
     )
+    # Last, and in this order: the rules need the patterns, and an injury needs
+    # both the condition it is diagnosed as and the joint it affects.
     _merge_stresses(session, exercises)
-    # Last: affects needs the joints, contraindications need the patterns.
-    _merge_injuries(session, injuries, conditions)
+    _merge_conditions(session, conditions)
+    _merge_injuries(session, injuries)
 
     return read_report(session)
