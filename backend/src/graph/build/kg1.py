@@ -1,19 +1,47 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from neo4j import Session
+from pydantic import BaseModel, ConfigDict
 
-from graph.build.catalog import Exercise, distinct_values, load_exercises
+from graph.build.catalog import Exercise, load_exercises
 from graph.build.report import BuildReport, read_report
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
 
-# Which exercise field feeds which node label and edge type. This table is the
-# whole of KG1 v0 — every node and edge is derived from the catalog, nothing is
-# authored yet.
-_CATALOG_EDGES: tuple[tuple[str, NodeLabel, RelType], ...] = (
-    ("muscle_groups", NodeLabel.MUSCLE, RelType.TARGETS),
-    ("joints_loaded", NodeLabel.ANATOMICAL_STRUCTURE, RelType.STRESSES),
-    ("equipment_required", NodeLabel.EQUIPMENT, RelType.REQUIRES),
-    ("movement_patterns", NodeLabel.MOVEMENT_PATTERN, RelType.IS_A),
+
+class _CatalogEdge(BaseModel):
+    """One catalog field, and the nodes and edge type its values become."""
+
+    model_config = ConfigDict(frozen=True)
+
+    terms: Callable[[Exercise], list[str]]
+    label: NodeLabel
+    rel: RelType
+
+
+# This table is the whole of KG1 v0 — every node and edge is derived from the
+# catalog, nothing is authored yet.
+_CATALOG_EDGES: tuple[_CatalogEdge, ...] = (
+    _CatalogEdge(
+        terms=lambda ex: ex.muscle_groups,
+        label=NodeLabel.MUSCLE,
+        rel=RelType.TARGETS,
+    ),
+    _CatalogEdge(
+        terms=lambda ex: ex.joints_loaded,
+        label=NodeLabel.ANATOMICAL_STRUCTURE,
+        rel=RelType.STRESSES,
+    ),
+    _CatalogEdge(
+        terms=lambda ex: ex.equipment_required,
+        label=NodeLabel.EQUIPMENT,
+        rel=RelType.REQUIRES,
+    ),
+    _CatalogEdge(
+        terms=lambda ex: ex.movement_patterns,
+        label=NodeLabel.MOVEMENT_PATTERN,
+        rel=RelType.IS_A,
+    ),
 )
 
 
@@ -61,13 +89,14 @@ def _merge_taxonomy(session: Session, exercises: list[Exercise]) -> None:
     Anatomical structures land at the joint tier, because that is the only tier
     the catalog names; regions and sub-structures are authored separately.
     """
-    for field, label, _ in _CATALOG_EDGES:
-        names = distinct_values(exercises, field)
-        if label is NodeLabel.ANATOMICAL_STRUCTURE:
+    for edge in _CATALOG_EDGES:
+        # Sorted so a build writes taxonomy nodes in a stable order.
+        names = sorted({term for ex in exercises for term in edge.terms(ex)})
+        if edge.label is NodeLabel.ANATOMICAL_STRUCTURE:
             session.run(
                 f"""
                 UNWIND $names AS name
-                MERGE (n:{label} {{name: name}})
+                MERGE (n:{edge.label} {{name: name}})
                 SET n.source = $source, n.tier = $tier
                 """,
                 names=names,
@@ -78,7 +107,7 @@ def _merge_taxonomy(session: Session, exercises: list[Exercise]) -> None:
             session.run(
                 f"""
                 UNWIND $names AS name
-                MERGE (n:{label} {{name: name}})
+                MERGE (n:{edge.label} {{name: name}})
                 SET n.source = $source
                 """,
                 names=names,
@@ -88,25 +117,25 @@ def _merge_taxonomy(session: Session, exercises: list[Exercise]) -> None:
 
 def _merge_catalog_edges(session: Session, exercises: list[Exercise]) -> None:
     """Connect each exercise to the taxonomy nodes its row names."""
-    for field, label, rel in _CATALOG_EDGES:
+    for edge in _CATALOG_EDGES:
         pairs = [
-            {"exercise_id": ex.id, "target": value}
+            {"exercise_id": ex.id, "target": term}
             for ex in exercises
-            for value in getattr(ex, field)
+            for term in edge.terms(ex)
         ]
         # `stresses` is constrained to the joint tier in the MATCH rather than
         # checked afterwards, so the schema invariant lives in the query itself.
         target_pattern = (
-            f"(t:{label} {{name: row.target, tier: '{AnatomicalTier.JOINT}'}})"
-            if rel is RelType.STRESSES
-            else f"(t:{label} {{name: row.target}})"
+            f"(t:{edge.label} {{name: row.target, tier: '{AnatomicalTier.JOINT}'}})"
+            if edge.rel is RelType.STRESSES
+            else f"(t:{edge.label} {{name: row.target}})"
         )
         session.run(
             f"""
             UNWIND $rows AS row
             MATCH (e:{NodeLabel.EXERCISE} {{id: row.exercise_id}})
             MATCH {target_pattern}
-            MERGE (e)-[:{rel}]->(t)
+            MERGE (e)-[:{edge.rel}]->(t)
             """,
             rows=pairs,
         )

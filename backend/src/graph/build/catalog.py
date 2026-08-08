@@ -38,16 +38,3 @@ def load_exercises(path: Path) -> list[Exercise]:
     """
     rows = json.loads(path.read_text())
     return [Exercise.model_validate(row) for row in rows]
-
-
-def distinct_values(exercises: list[Exercise], field: str) -> list[str]:
-    """Collect the distinct values of a list-valued exercise field.
-
-    Args:
-        exercises: Catalog rows to draw from.
-        field: Name of a `list[str]` field on `Exercise`.
-
-    Returns:
-        The distinct values, sorted, so a build writes them in a stable order.
-    """
-    return sorted({value for ex in exercises for value in getattr(ex, field)})
