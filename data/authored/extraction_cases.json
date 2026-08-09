@@ -1,0 +1,111 @@
+[
+  {
+    "prompt": "Full-body session today with some isolation work around her pecs.",
+    "instructions": [],
+    "emphasis": [
+      "pecs"
+    ],
+    "unmapped": [],
+    "note": "ASSESSMENT.md:23, verbatim. 'Pecs' is emphasis rather than a constraint: it widens the session. 'Full-body' asks for nothing the planner does not already do, so it maps to nothing rather than being forced into a kind."
+  },
+  {
+    "prompt": "She's only got dumbbells and a kettlebell at home today.",
+    "instructions": [
+      {
+        "op": "replace",
+        "kind": "equipment",
+        "phrase": "dumbbells"
+      },
+      {
+        "op": "replace",
+        "kind": "equipment",
+        "phrase": "kettlebell"
+      }
+    ],
+    "emphasis": [],
+    "unmapped": [],
+    "note": "ASSESSMENT.md:31. 'Only' is what makes both of these replace rather than add \u2014 together they name an exhaustive set, so the chart's stored equipment goes. The article is dropped: 'a kettlebell' and 'kettlebell' resolve identically, and labelling the article made the case brittle to phrasing rather than to meaning."
+  },
+  {
+    "prompt": "Exclude deadlifts.",
+    "instructions": [
+      {
+        "op": "add",
+        "kind": "excluded_pattern",
+        "phrase": "deadlifts"
+      }
+    ],
+    "emphasis": [],
+    "unmapped": [],
+    "note": "ASSESSMENT.md:29. A plural like 'deadlifts' names a class of movement, so it is a pattern rather than one catalogue entry \u2014 the same reading as 'squats' and 'jumping'. It resolves to nothing either way: the catalogue stocks no deadlift and no hinge pattern by that name, and the resolver declines the term by design (decisions.md, Resolver 4). The plan reports that it applied to nothing rather than quietly guessing at a hinge."
+  },
+  {
+    "prompt": "Her left knee is bothering her again.",
+    "instructions": [
+      {
+        "op": "add",
+        "kind": "flagged_structure",
+        "phrase": "left knee"
+      }
+    ],
+    "emphasis": [],
+    "unmapped": [],
+    "note": "ASSESSMENT.md:30. The laterality stays in the phrase \u2014 `normalize` strips it into a side rather than extraction dropping it. The possessive does not: 'her' is about the speaker, not the knee, and expecting it made the label brittle to phrasing rather than to meaning."
+  },
+  {
+    "prompt": "No jumping today, and add a pull-up bar \u2014 she borrowed one.",
+    "instructions": [
+      {
+        "op": "add",
+        "kind": "excluded_pattern",
+        "phrase": "jumping"
+      },
+      {
+        "op": "add",
+        "kind": "equipment",
+        "phrase": "pull-up bar"
+      }
+    ],
+    "emphasis": [],
+    "unmapped": [],
+    "note": "Two instructions of different kinds in one sentence, and an `add` on equipment rather than a `replace` \u2014 she has gained a piece of kit, not swapped her whole set."
+  },
+  {
+    "prompt": "Give her something for glutes and hamstrings, no overhead press.",
+    "instructions": [
+      {
+        "op": "add",
+        "kind": "excluded_pattern",
+        "phrase": "overhead press"
+      }
+    ],
+    "emphasis": [
+      "glutes",
+      "hamstrings"
+    ],
+    "unmapped": [],
+    "note": "Emphasis and exclusion in one breath. 'Overhead press' is an authored alias onto `upper push - vertical` (decisions.md, Resolver 4), so this is also the case that exercises the alias pass end to end."
+  },
+  {
+    "prompt": "She's been sleeping badly and says she's wiped out.",
+    "instructions": [],
+    "emphasis": [],
+    "unmapped": [
+      "She's been sleeping badly and says she's wiped out."
+    ],
+    "note": "The case that keeps extraction honest. Nothing in the graph connects sleep to exercise selection, so forcing this into a constraint would invent reasoning. It is reported to the coach and never reaches the filter."
+  },
+  {
+    "prompt": "Let's put squats back in, she's cleared for them now.",
+    "instructions": [
+      {
+        "op": "remove",
+        "kind": "excluded_pattern",
+        "phrase": "squats"
+      }
+    ],
+    "emphasis": [],
+    "unmapped": [],
+    "note": "The `remove` op, on a waivable kind. If the coach tried the same for the injury it would extract identically and `compose` would refuse it \u2014 refusal belongs there, not here, so that it cannot depend on phrasing."
+  }
+]

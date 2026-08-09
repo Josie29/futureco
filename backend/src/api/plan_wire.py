@@ -206,7 +206,13 @@ def eligibility(attribution: Attribution, total: int) -> Eligibility:
     )
 
 
-def payload(generated: GeneratedPlan, prompt: str, title: str, day_label: str) -> PlanPayload:
+def payload(
+    generated: GeneratedPlan,
+    prompt: str,
+    title: str,
+    day_label: str,
+    unmapped: tuple[str, ...] = (),
+) -> PlanPayload:
     """Project a generated plan onto the console's contract.
 
     A pure mapping. Everything here was decided upstream — this decides only
@@ -217,6 +223,7 @@ def payload(generated: GeneratedPlan, prompt: str, title: str, day_label: str) -
         prompt: What the coach typed, echoed for the revision trail.
         title: A name for the session.
         day_label: When it is for.
+        unmapped: Phrases extraction heard but could not classify.
 
     Returns:
         The payload `web/src/api/client.ts` expects.
@@ -260,6 +267,19 @@ def payload(generated: GeneratedPlan, prompt: str, title: str, day_label: str) -
         )
         for resolution in generated.focus
         if resolution.match is None
+    ]
+    # Heard but not classifiable — never resolved, so there is no near-miss to
+    # show. Reported beside the declines because to a coach they are the same
+    # thing: something said that the session does not reflect.
+    unresolved += [
+        UnresolvedPhrase(
+            phrase=phrase,
+            best_guess=None,
+            confidence=0.0,
+            threshold=0.0,
+            fallback="heard, but it is not something the planner can act on",
+        )
+        for phrase in unmapped
     ]
 
     return PlanPayload(

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "futureco-local"
     data_dir: Path = Field(default=REPO_ROOT / "data")
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-5"
     model_cache_dir: Path | None = None
     """Where the embedding model lives. None leaves fastembed on its own
     default, which is a directory under the system temp dir. The container sets
@@ -45,6 +47,11 @@ class Settings(BaseSettings):
     def resolver_cases_path(self) -> Path:
         """Path to the labelled cases that calibrate and test the resolver."""
         return self.data_dir / "authored" / "resolver_cases.json"
+
+    @property
+    def extraction_cases_path(self) -> Path:
+        """Path to the labelled cases that stand in for, and measure, the model."""
+        return self.data_dir / "authored" / "extraction_cases.json"
 
     @property
     def member_context_path(self) -> Path:

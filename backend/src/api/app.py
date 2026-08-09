@@ -5,6 +5,8 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
+from agent.client import build_extractor
+from agent.extract import Extractor
 from api.errors import register_error_handlers
 from api.routes import graph as graph_routes
 from api.routes import plans as plan_routes
@@ -24,10 +26,22 @@ class Runtime:
     request would spend the whole latency budget before any work started.
     """
 
-    def __init__(self, driver: Driver, resolver: Resolver, report: BuildReport) -> None:
+    def __init__(
+        self,
+        driver: Driver,
+        resolver: Resolver,
+        report: BuildReport,
+        extractor: Extractor,
+        live_extraction: bool,
+    ) -> None:
         self.driver = driver
         self.resolver = resolver
         self.report = report
+        self.extractor = extractor
+        self.live_extraction = live_extraction
+        """False when no API key is configured. Not a degraded mode: extraction
+        is the entire model surface, so the plans are the same — they just have
+        to be asked for as instructions rather than as a sentence."""
 
 
 @asynccontextmanager
@@ -45,7 +59,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             report = read_report(session)
         # Touching the matrix forces the model load and the concept embed now.
         vocabulary.similarities("warm")
-        app.state.runtime = Runtime(driver, Resolver(vocabulary), report)
+        extractor, live = build_extractor()
+        app.state.runtime = Runtime(driver, Resolver(vocabulary), report, extractor, live)
         yield
     finally:
         driver.close()
@@ -90,6 +105,7 @@ def health(run: Runtime = Depends(runtime), session: Session = Depends(graph)) -
         "status": "ok",
         "graph": {"nodes": live.node_total, "edges": live.edge_total},
         "vocabulary": {"concepts": len(run.resolver.vocabulary.concepts)},
+        "extraction": "live" if run.live_extraction else "scripted",
     }
 
 

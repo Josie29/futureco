@@ -3,6 +3,7 @@ name = "futureco-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.75",
     "fastapi>=0.120",
     "fastembed>=0.8.0",
     "neo4j>=5.28",
@@ -31,5 +32,10 @@ dev = [
 # src/ is a flat namespace-package tree, so pytest needs it on the path and the
 # importlib import mode to find modules without __init__.py files.
 pythonpath = ["src"]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib -m 'not live'"
+markers = [
+    # Costs money and needs a key. Opt in with `-m live`; the rest of the suite
+    # runs against the scripted extractor and never reaches the network.
+    "live: exercises the real Anthropic API",
+]
 testpaths = ["tests"]

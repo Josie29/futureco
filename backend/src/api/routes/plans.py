@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from agent.schemas import ExtractionResult
 from api.deps import GraphSession
 from api.plan_models import Eligibility, PlanPayload, PlanRequest
 from api.plan_wire import eligibility, payload
@@ -52,6 +53,19 @@ def to_instructions(disabled: list[str]) -> tuple[Instruction, ...]:
     return tuple(instructions)
 
 
+def _extract(extractor, prompt: str) -> ExtractionResult:  # noqa: ANN001
+    """Read the coach's sentence, if there is one.
+
+    An empty prompt is a first-class request, not a degenerate one: the builder
+    can submit switched-off constraints alone, and the CLI probe and the
+    README's worked examples take exactly this path. Skipping the call also
+    keeps a keyless deployment on the same code path rather than a fallback.
+    """
+    if not prompt.strip():
+        return ExtractionResult()
+    return extractor.extract(prompt)
+
+
 def _title(minutes: int) -> str:
     """Name the session from what was asked for, not from what it contains.
 
@@ -89,19 +103,28 @@ def create_plan(
         HTTPException: 404 if the member is not in the graph; 422 if a
             `disabled` id names something that cannot be switched off.
     """
-    resolver = request.app.state.runtime.resolver
+    runtime = request.app.state.runtime
+    heard = _extract(runtime.extractor, body.prompt)
+
     try:
         generated = generate(
             session,
-            resolver,
+            runtime.resolver,
             member_id,
             body.duration_min,
-            to_instructions(body.disabled),
+            to_instructions(body.disabled) + tuple(heard.instructions),
+            tuple(heard.emphasis),
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
-    return payload(generated, body.prompt, _title(body.duration_min), "Today")
+    return payload(
+        generated,
+        body.prompt,
+        _title(body.duration_min),
+        "Today",
+        unmapped=tuple(heard.unmapped),
+    )
 
 
 @router.get(

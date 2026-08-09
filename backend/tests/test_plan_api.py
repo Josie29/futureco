@@ -2,6 +2,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agent.extract import ScriptedExtractor
 from api.errors import register_error_handlers
 from api.plan_models import FilterCause, VerdictLabel
 from api.routes import plans as plan_routes
@@ -14,11 +15,19 @@ MEMBER = "mbr_01HX9JORDAN"
 
 
 class _Runtime:
-    """The slice of the app's runtime these routes actually use."""
+    """The slice of the app's runtime these routes actually use.
+
+    The extractor is the scripted one on purpose: these tests are about
+    routing and projection, and a live model would make them slow, costly and
+    dependent on a key. The live extractor is measured against the same cases
+    in `test_agent_extract.py`.
+    """
 
     def __init__(self, driver, resolver) -> None:
         self.driver = driver
         self.resolver = resolver
+        self.extractor = ScriptedExtractor()
+        self.live_extraction = False
 
 
 @pytest.fixture(scope="module")
