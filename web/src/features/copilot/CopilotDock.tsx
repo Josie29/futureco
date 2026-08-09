@@ -51,6 +51,17 @@ function CopilotThread({
                 m.from === "copilot" && "rounded-r-[4px] border-l-2 border-cobalt bg-ground px-2 py-2",
               )}
             >
+              {/* An answer that did less than it appears to must never look
+                  whole. Set when synthesis was unavailable, a citation was
+                  dropped as invented, or the model declined — the three ways
+                  this surface can quietly under-deliver. Above the text, not
+                  below it, so it is read before the answer rather than after. */}
+              {m.degraded && (
+                <p className="mb-1.5 rounded-[4px] border border-line bg-card px-1.5 py-1 text-micro text-faint">
+                  {m.degraded}
+                </p>
+              )}
+
               {m.paragraphs.map((p, i) => (
                 <p key={i} className={cn(i > 0 && "mt-1.5")}>
                   {p.lead && <strong className="font-semibold">{p.lead} </strong>}

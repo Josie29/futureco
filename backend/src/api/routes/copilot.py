@@ -137,7 +137,7 @@ def copilot_health() -> dict:
 
 # Written and left unregistered. The traces surface belongs to the generator
 # stream, which is the bigger span producer and should pick the durable store
-# (docs/copilot-plan.md, D4). These exist so that work starts from a running
+# (docs/decisions.md, *Copilot* 8). These exist so work starts from a running
 # store with a real producer rather than from an empty file.
 traces_router = APIRouter(tags=["traces"])
 

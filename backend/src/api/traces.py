@@ -13,7 +13,7 @@ from copilot.tools import QueryRecord
 #
 # This is the storage half only. `tech-stack.md` chose a local Postgres table
 # for durability, and the generator is the bigger span producer, so it should
-# shape that schema — see docs/copilot-plan.md, D4. What lands here is the
+# shape that schema — see docs/decisions.md, *Copilot* 8. What lands here is the
 # interface plus an in-memory implementation, because a multi-tool agent
 # against a five-second budget is undebuggable without one. Swapping the
 # implementation is a change to this file.

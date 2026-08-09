@@ -170,6 +170,36 @@ Edits to the provided synthetic data, and why each was made rather than worked a
 
 ---
 
+## Copilot — retrieval over KG2
+
+*2026-08-09*
+
+1. **Nine typed tools over module-constant Cypher; no model writes a query.** `tech-stack.md` rejected `GraphCypherQAChain` for exactly this, and the rejection has to survive contact with an actual agent. The model chooses which tool to call and with what arguments; the Cypher is a constant in `copilot/queries.py`. That keeps the safety property the whole system is built on — there is no typed path from prose to a traversal — on the surface most likely to erode it.
+
+2. **Thinking stays on, and `effort` is the cost lever instead.** Claude Opus 5 has a documented failure mode with thinking disabled: a tool call is written into the visible text rather than emitted as a `tool_use` block. The turn succeeds, the call never runs, and nothing errors. For a copilot whose entire output is tool-driven retrieval that failure is silent and total — an answer composed from no data, indistinguishable from one composed from all of it. `effort: low` buys most of the same latency and token saving without it.
+
+3. **Charts are assembled server-side; the model names one, it never draws one.** It returns a `kind` and, for a metric chart, a `metric_id`; `charts.py` reads the numbers from the graph. So the worst a wrong request can do is show the wrong *true* chart. A model able to emit data points could produce a plausible trend that never happened, and a chart is the most credible thing on the page.
+
+4. **Citations are checked against what this run retrieved, not against what exists.** The allowlist is the set of message ids the tools actually returned. A model naming a real message it was never shown is still asserting a source it does not have, and the console renders citations as clickable evidence. An id that fails the check is dropped and the run is marked degraded.
+
+   This is the *only* claim in an answer that can be mechanically verified, and the limit is worth stating plainly: **figures inside prose are not checked.** A model can misquote a number it was correctly given, and nothing here catches that. Charts and citations are verified; sentences are not.
+
+5. **Without a key the same retrieval runs, and the answer says nothing interpreted it.** The alternative was a scripted stand-in, which works for the generator — extraction is its entire model surface, so the plans come out identical — and cannot work here, because synthesis *is* the copilot's output. So the keyless path runs the same tools against the same graph and renders what came back: readings, series, cited messages, composed by fixed templates that state facts and draw no conclusions. Reading a decline as a churn signal is inference, and inference is what the key buys. Keeping that line sharp is what makes the banner honest.
+
+   Routing without a model is keyword-based and named `Intent` so nobody mistakes it for understanding. Metrics are matched from the graph's own index rather than a hardcoded list, so every metric she has readings for is reachable — asking about ferritin works without the word appearing anywhere in the router.
+
+6. **`degraded` is a field on every answer, not a log line.** Synthesis unavailable, a citation dropped, the model declined, a tool failed mid-run — all four produce an answer that is less than a full one, and all four render as a banner above the text. A partial answer that looks whole is the worst thing this surface can return, which is also why the same condition sets `SpanStatus.DEGRADED` on the run.
+
+7. **Single agent, deliberately.** A deterministic pre-pass scans the question for concepts, one tool-running agent sits in the middle, and a deterministic post-pass validates citations and assembles charts. Splitting the middle into a retriever and a synthesiser would be two prompts pretending to be an architecture. The multi-agent workflow `ASSESSMENT.md:5` calls core belongs where the stages genuinely differ — planning, safety, dosing — which is the generator.
+
+8. **Span emission ships; the durable store and the Traces surface do not.** A `TraceStore` protocol with a bounded in-memory implementation, and every copilot run recorded — the Cypher each read ran, its row count, the tool loop, token counts. That much is not optional: a nine-tool agent against a five-second budget is undebuggable without it.
+
+   What does not ship is the Postgres table `tech-stack.md` chose, or the `/api/traces` endpoints. Both are written and left unmounted, because the generator is the bigger span producer and should shape the schema, and because a trace list holding only copilot runs would be worse than the fixture the console reads today — it would look complete while showing half the runs. In-memory traces vanish on restart, which is the exact criticism `tech-stack.md` levels at the rejected Jaeger option; that is why this is staged rather than chosen.
+
+9. **The copilot answers "why can't she squat?" from the same edges the filter enforces.** `clinical_picture` walks `Injury -diagnosed_as-> Condition -contraindicates|cautions-> Pattern`, which is what `safety.filter` reads. One source of truth for the safety claim, so an explanation here cannot drift from an exclusion there.
+
+---
+
 ## Packaging
 
 1. **`python:3.13-slim`, not alpine.** `onnxruntime` — which `fastembed` depends on — publishes manylinux wheels only. On musl there is no wheel, so pip falls back to compiling from source. Alpine's smaller base is not worth a build that may not finish.

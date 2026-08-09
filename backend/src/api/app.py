@@ -101,7 +101,7 @@ app.include_router(copilot_routes.router, prefix="/api")
 # `copilot_routes.traces_router` stays unmounted. Only the copilot emits spans;
 # mounting it now would give the console's Traces tab a list containing half the
 # runs it shows today, which is worse than the mock it would replace. It goes up
-# when the generator emits spans too — see docs/copilot-plan.md, D4.
+# when the generator emits spans too — see docs/decisions.md, *Copilot* 8.
 
 
 def runtime() -> Runtime:
