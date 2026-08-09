@@ -156,6 +156,31 @@ def role_of(patterns: tuple[str, ...]) -> FamilyRole | None:
     return min(roles, key=_ordinal)
 
 
+def deciding_pattern(patterns: tuple[str, ...]) -> str | None:
+    """The one family that placed this exercise, of however many it claims.
+
+    What makes the movement the movement it is: *Med Ball Hamstring Walkout*
+    is a hip lift that happens to resist rotation, so the hip lift is what
+    another exercise would have to share to stand in for it. The other
+    families did not place it, and treating them as equals is how a bird dog
+    ends up offered as a substitute for a hinge.
+
+    Args:
+        patterns: Every movement-pattern family the exercise names.
+
+    Returns:
+        The deciding family, or None when none of them is known.
+    """
+    role = role_of(patterns)
+    if role is None:
+        return None
+    return next(
+        pattern
+        for pattern in patterns
+        if pattern in FAMILY_ROLES and FAMILY_ROLES[pattern] == role
+    )
+
+
 def unmapped(patterns: tuple[str, ...]) -> tuple[str, ...]:
     """Families this table does not know, for reporting rather than guessing."""
     return tuple(pattern for pattern in patterns if pattern not in FAMILY_ROLES)

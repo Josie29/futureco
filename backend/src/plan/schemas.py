@@ -75,11 +75,29 @@ class MovementFacts(BaseModel):
     `rep_seconds` is then `0`; see `decisions.md`, Data cleanup 6."""
 
     is_bilateral: bool
+    muscles: tuple[str, ...] = ()
+    equipment: tuple[str, ...] = ()
+    goals: tuple["GoalService", ...] = ()
+    """Goals this exercise serves, and the muscle each is served through."""
 
     @property
     def per_side(self) -> bool:
         """Whether the exercise trains one side at a time."""
         return not self.is_bilateral
+
+
+class GoalService(BaseModel):
+    """A goal an exercise advances, and the muscle they share.
+
+    The muscle is carried because it is the join the graph actually walked,
+    and a coach reading *"why this one"* is owed the hop, not the conclusion.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    goal: str
+    muscle: str
+    priority: int
 
 
 class Prescription(BaseModel):

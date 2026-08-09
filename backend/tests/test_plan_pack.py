@@ -29,7 +29,7 @@ def result(session):
 @pytest.fixture(scope="module")
 def facts(session):
     """Catalog facts for every exercise."""
-    return movement_facts(session)
+    return movement_facts(session, MEMBER)
 
 
 def kinds(plan, kind: ShortfallKind) -> list:
