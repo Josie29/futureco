@@ -8,21 +8,27 @@ from plan.schemas import GoalService, MovementFacts
 # are interpolated from the enums because Cypher cannot parameterise them, and
 # nothing filters. The packer needs facts for every exercise the filter might
 # hand it, and an absence you never retrieved cannot be explained.
+#
+# `patterns` is read from the node property rather than collected from the
+# `is_a` edges, because the catalog lists an exercise's primary pattern first
+# and `collect` does not promise to preserve that. `linked` is the edge-derived
+# set, returned so a test can hold the two to each other.
 MOVEMENT_FACTS = f"""
 MATCH (e:{NodeLabel.EXERCISE})
 OPTIONAL MATCH (e)-[:{RelType.IS_A}]->(p:{NodeLabel.MOVEMENT_PATTERN})
-WITH e, collect(DISTINCT p.name) AS patterns
+WITH e, e.movement_patterns AS patterns, collect(DISTINCT p.name) AS linked
 OPTIONAL MATCH (e)-[:{RelType.TARGETS}]->(mu:{NodeLabel.MUSCLE})
-WITH e, patterns, collect(DISTINCT mu.name) AS muscles
+WITH e, patterns, linked, collect(DISTINCT mu.name) AS muscles
 OPTIONAL MATCH (e)-[:{RelType.REQUIRES}]->(q:{NodeLabel.EQUIPMENT})
-WITH e, patterns, muscles, collect(DISTINCT q.name) AS equipment
+WITH e, patterns, linked, muscles, collect(DISTINCT q.name) AS equipment
 OPTIONAL MATCH (:{NodeLabel.MEMBER} {{id: $member_id}})-[:{RelType.HAS}]->(g:{NodeLabel.GOAL})
               -[:{RelType.TARGETS}]->(gm:{NodeLabel.MUSCLE})<-[:{RelType.TARGETS}]-(e)
-WITH e, patterns, muscles, equipment,
+WITH e, patterns, linked, muscles, equipment,
      [row IN collect(DISTINCT {{goal: g.text, muscle: gm.name, priority: g.priority}})
       WHERE row.goal IS NOT NULL] AS goals
 RETURN e.id AS exercise_id,
        patterns,
+       linked,
        muscles,
        equipment,
        goals,
@@ -64,7 +70,7 @@ def movement_facts(session: Session, member_id: str) -> dict[str, MovementFacts]
     return {
         row["exercise_id"]: MovementFacts(
             exercise_id=row["exercise_id"],
-            patterns=tuple(sorted(row["patterns"])),
+            patterns=tuple(row["patterns"]),
             muscles=tuple(sorted(row["muscles"])),
             equipment=tuple(sorted(row["equipment"])),
             goals=tuple(

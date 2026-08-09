@@ -3,6 +3,7 @@ from safety.policy import Verdict
 
 from plan.families import SLOT_ORDER, role_of
 from plan.prescribe import MAX_SETS, MIN_SETS, SECTION_PLANS, half_up, prescribe
+from plan.why import reasons_for
 from plan.schemas import (
     Block,
     MovementFacts,
@@ -81,7 +82,10 @@ def _partition(
 
 
 def _fixed_blocks(
-    verdicts: list[Verdict], section: Section, facts: dict[str, MovementFacts]
+    verdicts: list[Verdict],
+    section: Section,
+    facts: dict[str, MovementFacts],
+    focus: frozenset[str],
 ) -> list[Block]:
     """Dose warmup or cooldown, whose set counts are not solved."""
     plan = SECTION_PLANS[section]
@@ -101,6 +105,7 @@ def _fixed_blocks(
                 penalty=verdict.penalty,
                 fit=verdict.fit,
                 headline=verdict.headline,
+                reasons=reasons_for(verdict, movement, role, focus),
             )
         )
     return blocks
@@ -211,7 +216,11 @@ def _select_main(
 
 
 def _dose_main(
-    chosen: list[Verdict], facts: dict[str, MovementFacts], budget: int, anchor: Verdict | None
+    chosen: list[Verdict],
+    facts: dict[str, MovementFacts],
+    budget: int,
+    anchor: Verdict | None,
+    focus: frozenset[str],
 ) -> list[Block]:
     """Fit the selected main exercises into their budget.
 
@@ -232,15 +241,19 @@ def _dose_main(
     working = list(chosen)
     while working:
         for sets in range(MAX_SETS, MIN_SETS - 1, -1):
-            blocks = [_main_block(v, facts, sets, anchor) for v in working]
+            blocks = [_main_block(v, facts, sets, anchor, focus) for v in working]
             if _cost(blocks) <= budget:
-                return _top_up(blocks, working, facts, budget, anchor)
+                return _top_up(blocks, working, facts, budget, anchor, focus)
         working.pop()
     return []
 
 
 def _main_block(
-    verdict: Verdict, facts: dict[str, MovementFacts], sets: int, anchor: Verdict | None
+    verdict: Verdict,
+    facts: dict[str, MovementFacts],
+    sets: int,
+    anchor: Verdict | None,
+    focus: frozenset[str],
 ) -> Block:
     """One dosed main-block exercise."""
     movement = facts[verdict.exercise_id]
@@ -257,6 +270,7 @@ def _main_block(
         fit=verdict.fit,
         headline=verdict.headline,
         anchored=anchor is not None and verdict.exercise_id == anchor.exercise_id,
+        reasons=reasons_for(verdict, movement, role, focus),
     )
 
 
@@ -266,6 +280,7 @@ def _top_up(
     facts: dict[str, MovementFacts],
     budget: int,
     anchor: Verdict | None,
+    focus: frozenset[str],
 ) -> list[Block]:
     """Spend leftover budget one set at a time, cycling best-ranked first.
 
@@ -283,7 +298,7 @@ def _top_up(
         for index, verdict in enumerate(chosen):
             if result[index].prescription.sets >= MAX_SETS:
                 continue
-            candidate = _main_block(verdict, facts, result[index].prescription.sets + 1, anchor)
+            candidate = _main_block(verdict, facts, result[index].prescription.sets + 1, anchor, focus)
             trial = result[:index] + [candidate] + result[index + 1 :]
             if _cost(trial) <= budget:
                 result = trial
@@ -404,7 +419,12 @@ def _shortfalls(
     return found
 
 
-def pack(result: FilterResult, facts: dict[str, MovementFacts], minutes: int) -> WorkoutPlan:
+def pack(
+    result: FilterResult,
+    facts: dict[str, MovementFacts],
+    minutes: int,
+    focus: frozenset[str] = frozenset(),
+) -> WorkoutPlan:
     """Build a timed session from the exercises the filter cleared.
 
     Deterministic throughout: the inputs are the ranked verdicts, the catalog
@@ -416,6 +436,7 @@ def pack(result: FilterResult, facts: dict[str, MovementFacts], minutes: int) ->
         result: The filter's verdicts for the whole catalog.
         facts: Movement facts by exercise id, from `plan.queries`.
         minutes: The requested session length.
+        focus: Muscles the request asked to emphasise, already resolved.
 
     Returns:
         The session, the time arithmetic, and every gap between the two.
@@ -427,18 +448,20 @@ def pack(result: FilterResult, facts: dict[str, MovementFacts], minutes: int) ->
         pools[Section.WARMUP][: _clamp(half_up(minutes / WARMUP_MINUTES_PER_ITEM), 2, 5)],
         Section.WARMUP,
         facts,
+        focus,
     )
     cooldown = _fixed_blocks(
         pools[Section.COOLDOWN][: _clamp(half_up(minutes / COOLDOWN_MINUTES_PER_ITEM), 2, 4)],
         Section.COOLDOWN,
         facts,
+        focus,
     )
     warmup, cooldown, trimmed = _trim_preparatory(warmup, cooldown, window)
 
     main_budget = max(0, window - _cost(warmup) - _cost(cooldown))
     slots = _clamp(main_budget // NOMINAL_MAIN_SECONDS, MIN_MAIN_SLOTS, MAX_MAIN_SLOTS)
     chosen, anchor = _select_main(pools[Section.MAIN], facts, slots)
-    main = _dose_main(chosen, facts, main_budget, anchor)
+    main = _dose_main(chosen, facts, main_budget, anchor, focus)
 
     blocks = _sequence(warmup) + _sequence(main) + _sequence(cooldown)
     budget = TimeBudget(

@@ -165,8 +165,14 @@ def deciding_pattern(patterns: tuple[str, ...]) -> str | None:
     families did not place it, and treating them as equals is how a bird dog
     ends up offered as a substitute for a hinge.
 
+    Unlike `role_of`, this **depends on the catalog's order**, which lists an
+    exercise's primary family first: *Alternating Dumbbell Racked Crossback
+    Lunge* is `lower push - lunge, lower - abduction, lower - adduction`, and
+    all three place it identically, so only the order says it is a lunge.
+    Sorting them alphabetically called it an abduction movement.
+
     Args:
-        patterns: Every movement-pattern family the exercise names.
+        patterns: Every family the exercise names, in catalog order.
 
     Returns:
         The deciding family, or None when none of them is known.

@@ -19,6 +19,13 @@ SUBSTITUTABLE: frozenset[SignalKind] = frozenset(
     {SignalKind.MISSING_EQUIPMENT, SignalKind.COACH_EXCLUSION}
 )
 
+# Written out per cause rather than derived from the enum name, which produced
+# "was dropped because it missing equipment".
+_DROPPED_BECAUSE: dict[SignalKind, str] = {
+    SignalKind.MISSING_EQUIPMENT: "needs equipment that is not available",
+    SignalKind.COACH_EXCLUSION: "was excluded for this session",
+}
+
 
 class Substitution(BaseModel):
     """A dropped movement and the eligible one standing in for it.
@@ -48,8 +55,7 @@ class Substitution(BaseModel):
             kind=ReasonKind.SUBSTITUTION,
             detail=(
                 f"stands in for {self.dropped_name}, which shares "
-                f"{self.shared_pattern} and was dropped because it "
-                f"{self.cause.value.replace('_', ' ')}"
+                f"{self.shared_pattern} and {_DROPPED_BECAUSE[self.cause]}"
             ),
             path=EvidencePath(
                 entry=self.dropped_name,

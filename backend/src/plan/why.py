@@ -1,66 +1,15 @@
-from enum import StrEnum
-
-from pydantic import BaseModel, ConfigDict
-
 from graph.schema import NodeLabel, RelType
-from safety.evidence import EvidencePath, Hop, Signal, SignalKind
+from safety.evidence import EvidencePath, Hop, SignalKind
 from safety.policy import Verdict
 
 from plan.families import deciding_pattern
-from plan.schemas import FamilyRole, MovementFacts, Section
+from plan.schemas import FamilyRole, MovementFacts, Reason, ReasonKind, Section
 
 # What the exercise itself is called at the far end of a path that was walked
 # towards it. Matches the convention `safety.filter._anatomy_signals` set: hops
 # are forward-only, so a traversal that ends at this exercise names it rather
 # than reversing the arrow.
 THIS = "(this)"
-
-
-class ReasonKind(StrEnum):
-    """Why a movement is where it is, positive and negative together.
-
-    The first six are `SignalKind` exactly, in its declaration order, so the
-    two diff cleanly and a `Signal` widens into a `Reason` without a mapping
-    table. The rest is positive evidence, which the filter has no reason to
-    emit — it exists to remove things, so every clean exercise leaves it with
-    nothing to say. Those are this module's to add.
-    """
-
-    CONTRAINDICATION = "contraindication"
-    MISSING_EQUIPMENT = "missing_equipment"
-    DISLIKE = "dislike"
-    COACH_EXCLUSION = "coach_exclusion"
-    CAUTION = "caution"
-    FLAGGED_STRUCTURE = "flagged_structure"
-
-    CLEARED = "cleared"
-    GOAL_SERVICE = "goal_service"
-    FOCUS_MATCH = "focus_match"
-    EQUIPMENT_FIT = "equipment_fit"
-    PATTERN_ROLE = "pattern_role"
-    SUBSTITUTION = "substitution"
-
-
-class Reason(BaseModel):
-    """One piece of evidence about one programmed movement.
-
-    Field-for-field a `Signal`, so a filter signal converts by widening its
-    `kind`. Every `detail` is either authored text, a fact read from the graph,
-    or a fixed connective — the rule `policy._headline` already follows, which
-    is what leaves no room for a generated justification.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    kind: ReasonKind
-    detail: str
-    path: EvidencePath
-    annotation: str | None = None
-
-    @classmethod
-    def of(cls, signal: Signal) -> "Reason":
-        """Widen a filter signal into a reason, unchanged."""
-        return cls.model_validate(signal.model_dump())
 
 
 def _cleared(name: str) -> Reason:

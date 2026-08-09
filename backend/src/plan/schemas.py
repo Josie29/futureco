@@ -2,6 +2,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from safety.evidence import EvidencePath, Signal
 from safety.filter import Attribution
 
 
@@ -58,6 +59,67 @@ class FamilyRole(BaseModel):
     slot: Slot
 
 
+class ReasonKind(StrEnum):
+    """Why a movement is where it is, positive and negative together.
+
+    The first six are `SignalKind` exactly, in its declaration order, so the
+    two diff cleanly and a `Signal` widens into a `Reason` without a mapping
+    table. The rest is positive evidence, which the filter has no reason to
+    emit — it exists to remove things, so every clean exercise leaves it with
+    nothing to say. Those are this module's to add.
+    """
+
+    CONTRAINDICATION = "contraindication"
+    MISSING_EQUIPMENT = "missing_equipment"
+    DISLIKE = "dislike"
+    COACH_EXCLUSION = "coach_exclusion"
+    CAUTION = "caution"
+    FLAGGED_STRUCTURE = "flagged_structure"
+
+    CLEARED = "cleared"
+    GOAL_SERVICE = "goal_service"
+    FOCUS_MATCH = "focus_match"
+    EQUIPMENT_FIT = "equipment_fit"
+    PATTERN_ROLE = "pattern_role"
+    SUBSTITUTION = "substitution"
+
+
+class Reason(BaseModel):
+    """One piece of evidence about one programmed movement.
+
+    Field-for-field a `Signal`, so a filter signal converts by widening its
+    `kind`. Every `detail` is either authored text, a fact read from the graph,
+    or a fixed connective — the rule `policy._headline` already follows, which
+    is what leaves no room for a generated justification.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: ReasonKind
+    detail: str
+    path: EvidencePath
+    annotation: str | None = None
+
+    @classmethod
+    def of(cls, signal: Signal) -> "Reason":
+        """Widen a filter signal into a reason, unchanged."""
+        return cls.model_validate(signal.model_dump())
+
+
+class GoalService(BaseModel):
+    """A goal an exercise advances, and the muscle they share.
+
+    The muscle is carried because it is the join the graph actually walked,
+    and a coach reading *"why this one"* is owed the hop, not the conclusion.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    goal: str
+    muscle: str
+    priority: int
+
+
 class MovementFacts(BaseModel):
     """The catalog fields the packer needs, read back from the Exercise node.
 
@@ -77,27 +139,13 @@ class MovementFacts(BaseModel):
     is_bilateral: bool
     muscles: tuple[str, ...] = ()
     equipment: tuple[str, ...] = ()
-    goals: tuple["GoalService", ...] = ()
+    goals: tuple[GoalService, ...] = ()
     """Goals this exercise serves, and the muscle each is served through."""
 
     @property
     def per_side(self) -> bool:
         """Whether the exercise trains one side at a time."""
         return not self.is_bilateral
-
-
-class GoalService(BaseModel):
-    """A goal an exercise advances, and the muscle they share.
-
-    The muscle is carried because it is the join the graph actually walked,
-    and a coach reading *"why this one"* is owed the hop, not the conclusion.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    goal: str
-    muscle: str
-    priority: int
 
 
 class Prescription(BaseModel):
@@ -120,15 +168,14 @@ class Prescription(BaseModel):
 
     rest_seconds: int
     per_side: bool
-    """Whether the exercise trains one side at a time. Read from the catalog's
-    `side`, never from `is_bilateral`, which is inverted in this data."""
+    """Whether the exercise trains one side at a time, so the work is doubled."""
 
     work_seconds: int
     """Work in one set, already doubled when `per_side`."""
 
     reps_clamped: bool
     """True when the modality's rep range overruled `estimated_rep_seconds`.
-    This binds on well over half the catalog, so it is reported rather than
+    It decides half the catalog's rep-based rows, so it is reported rather than
     assumed rare — see `decisions.md`, *Packing*."""
 
     @property
@@ -171,6 +218,10 @@ class Block(BaseModel):
     """Selected ahead of better-ranked exercises because it serves a
     top-priority goal. Recorded so the promotion is legible rather than a
     silent exception to the ranking."""
+
+    reasons: tuple[Reason, ...] = ()
+    """Why this movement is here, safety first. Never empty for a scheduled
+    block — `headline` is the one-line summary, this is what it summarises."""
 
 
 class ShortfallKind(StrEnum):
