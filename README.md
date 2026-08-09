@@ -157,7 +157,7 @@ The packing, prescription and policy tests are pure and need neither Docker nor 
 
 ```bash
 docker compose up -d neo4j
-cd backend && uv sync && uv run pytest      # 302 tests
+cd backend && uv sync && uv run pytest      # 321 tests
 ```
 
 Traversal tests need Neo4j; the packing, prescription and policy tests are pure. No test needs Postgres — the stores fall back to bounded in-memory implementations when `DATABASE_URL` is unset, and the keyless copilot tests force that path with a fixture rather than reading whatever `.env` happens to hold.
@@ -174,6 +174,7 @@ uv run pytest -m live
 |---|---|
 | [`docs/decisions.md`](./docs/decisions.md) | Every schema and design decision, and what was rejected |
 | [`docs/tech-stack.md`](./docs/tech-stack.md) | Stack choices with one-line rationale, and the alternatives |
+| [`docs/ontologies.md`](./docs/ontologies.md) | What was pulled from each ontology, what was left out, and why |
 | [`docs/kg1-schema.md`](./docs/kg1-schema.md) · [`docs/kg2-schema.md`](./docs/kg2-schema.md) | Node and edge types per graph |
 | `backend/src/graph/` | Schema enums and the Cypher build layer |
 | `backend/src/resolve/` | Three-pass concept resolver, and the mention scanner over free text |
@@ -207,13 +208,13 @@ agent   plan.generate           @    0.0 + 3483.2ms
 
 ## Status
 
-Built and tested end to end: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the coach copilot, run tracing, the API container serving the console, and 302 backend tests.
+Built and tested end to end: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the coach copilot, run tracing, the API container serving the console, and 321 backend tests.
+
+Both graphs carry a SKOS layer: every concept has a preferred label, its synonyms and a scheme, and 47 of them map into SNOMED CT with the relation that says how much the mapping lost. [`docs/ontologies.md`](./docs/ontologies.md) records what was taken from each ontology and what was not.
 
 KG2 holds the member's whole record — sessions, chat, biomarkers, labs and adherence — at three grains: traversed entities, leaf observations, and node properties. `docs/kg2-schema.md` records which block lands where and why.
 
 Known gaps, in the order they matter:
 
-- **SKOS mappings.** `ASSESSMENT.md:56` asks for the catalog's taxonomy mapped onto ontology concepts with SKOS. SNOMED codes ground the 27 anatomy nodes and the one condition; muscles, movement patterns and equipment have no ontology mapping, and `aliases.json` is a `skos:altLabel` set that is not named as one.
-- **OPE and COPPER.** Used nowhere and rejected nowhere. The spec asks for reasoning on what to pull and what to leave out, and for three of five ontologies that reasoning is not written down.
 - **Streaming.** Answers render whole. The generator names its pipeline stages while working and the copilot shows a skeleton, so the wait is legible, but token-by-token streaming is the remaining upgrade.
 - **Retrieval and plan-quality evals.** `resolver_cases.json` (25 labelled) and `extraction_cases.json` (8, pinned against the live model) are real eval sets with a threshold sweep behind them. There is no equivalent for copilot retrieval relevance or plan quality.

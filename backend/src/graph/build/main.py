@@ -21,6 +21,9 @@ def main() -> int:
                 settings.anatomy_path,
                 settings.member_context_path,
                 settings.contraindications_path,
+                settings.muscles_path,
+                settings.collections_path,
+                settings.aliases_path,
             )
             kg2 = build_kg2(session, settings.member_context_path)
             report = read_report(session)

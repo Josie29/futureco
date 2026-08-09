@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from neo4j import Session
@@ -5,13 +6,17 @@ from neo4j import Session
 from graph.build.catalog import (
     AnatomicalStructure,
     Condition,
+    Muscle,
     load_anatomy,
     load_conditions,
     load_exercises,
+    load_muscles,
 )
 from graph.build.member import Injury, load_member_context
 from graph.build.writes import EdgeWrite, NodeMatch, link_required, merge_nodes
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
+from graph.skos import SCHEME_OF, Collection, MatchType, Scheme, collection_of, load_collections
+from resolve.vocabulary import Alias
 
 _ANATOMY = NodeMatch(label=NodeLabel.ANATOMICAL_STRUCTURE)
 _JOINT = NodeMatch(label=NodeLabel.ANATOMICAL_STRUCTURE, tier=AnatomicalTier.JOINT)
@@ -204,12 +209,151 @@ def _build_injuries(session: Session, injuries: list[Injury]) -> None:
     )
 
 
+def _apply_skos(
+    session: Session,
+    muscles: list[Muscle],
+    structures: list[AnatomicalStructure],
+    conditions: list[Condition],
+    collections: dict[NodeLabel, list[Collection]],
+    aliases_path: Path,
+) -> None:
+    """Write the SKOS layer onto the taxonomy nodes that already exist.
+
+    Properties only — no new nodes, no new edges. Most of this is naming what
+    the graph already had: the catalogue name becomes `pref_label`, the alias
+    file becomes `alt_labels`, and the SNOMED columns become a typed mapping
+    with the relation that was authored beside them.
+
+    Every concept gets a scheme. Only the two clinically meaningful taxonomies
+    get an external mapping; patterns and equipment get a collection instead,
+    for the reason `docs/ontologies.md` gives.
+
+    Args:
+        session: An open Neo4j session.
+        muscles: Authored muscle mappings.
+        structures: The anatomy hierarchy, which carries its own SNOMED codes.
+        conditions: Clinical conditions, likewise.
+        collections: Authored collections over patterns and equipment.
+        aliases_path: Location of `aliases.json`, the altLabel set.
+
+    Raises:
+        ValueError: If a collection places one concept twice, or if the
+            authored members do not exactly cover the taxonomy in the graph. A
+            partition that has drifted from the catalogue is worse than none:
+            it reads as complete while silently omitting a concept.
+    """
+    aliases = [Alias.model_validate(row) for row in json.loads(aliases_path.read_text())]
+    alt_labels: dict[tuple[str, str], list[str]] = {}
+    for alias in aliases:
+        alt_labels.setdefault((alias.label, alias.canonical), []).append(alias.term)
+
+    def rows(label: NodeLabel, names: list[str]) -> list[dict]:
+        return [
+            {
+                "name": name,
+                "pref_label": name,
+                "alt_labels": sorted(alt_labels.get((label.value, name), [])),
+                "in_scheme": SCHEME_OF[label].value,
+            }
+            for name in names
+        ]
+
+    # The externally grounded half: muscles, anatomy and conditions.
+    mapped: list[tuple[NodeLabel, list[dict]]] = [
+        (
+            NodeLabel.MUSCLE,
+            [
+                {**row, "match_type": muscle.match.value, "match_code": muscle.snomed_code,
+                 "match_term": muscle.snomed_term, "match_scheme": Scheme.SNOMED.value}
+                for muscle, row in zip(
+                    muscles, rows(NodeLabel.MUSCLE, [m.name for m in muscles]), strict=True
+                )
+            ],
+        ),
+        (
+            NodeLabel.ANATOMICAL_STRUCTURE,
+            [
+                # Anatomy rows predate the `match` field and are all direct
+                # structure lookups, so they default to exactMatch. The one
+                # row that is not — patellar tendon, which SNOMED calls a
+                # ligament — is called out in docs/ontologies.md rather than
+                # given a column the other 26 rows would leave empty.
+                {**row, "match_type": MatchType.EXACT.value, "match_code": structure.snomed_code,
+                 "match_term": structure.snomed_term, "match_scheme": Scheme.SNOMED.value}
+                for structure, row in zip(
+                    structures,
+                    rows(NodeLabel.ANATOMICAL_STRUCTURE, [s.name for s in structures]),
+                    strict=True,
+                )
+            ],
+        ),
+        (
+            NodeLabel.CONDITION,
+            [
+                {**row, "match_type": MatchType.EXACT.value, "match_code": condition.snomed_code,
+                 "match_term": condition.snomed_term, "match_scheme": Scheme.SNOMED.value}
+                for condition, row in zip(
+                    conditions,
+                    rows(NodeLabel.CONDITION, [c.condition for c in conditions]),
+                    strict=True,
+                )
+            ],
+        ),
+    ]
+
+    for label, payload in mapped:
+        session.run(
+            f"""
+            UNWIND $rows AS row
+            MATCH (n:{label} {{name: row.name}})
+            SET n.pref_label = row.pref_label,
+                n.alt_labels = row.alt_labels,
+                n.in_scheme = row.in_scheme,
+                n.match_type = row.match_type,
+                n.match_scheme = row.match_scheme,
+                n.match_code = row.match_code,
+                n.match_term = row.match_term
+            """,
+            rows=payload,
+        )
+
+    # The locally scoped half: patterns and equipment, grouped rather than mapped.
+    for label, groups in collections.items():
+        placed = collection_of(groups)
+        present = {
+            record["name"]
+            for record in session.run(f"MATCH (n:{label}) RETURN n.name AS name")
+        }
+        if missing := present - set(placed):
+            raise ValueError(f"{label} concepts in no collection: {sorted(missing)}")
+        if unknown := set(placed) - present:
+            raise ValueError(f"collections name absent {label} concepts: {sorted(unknown)}")
+
+        session.run(
+            f"""
+            UNWIND $rows AS row
+            MATCH (n:{label} {{name: row.name}})
+            SET n.pref_label = row.pref_label,
+                n.alt_labels = row.alt_labels,
+                n.in_scheme = row.in_scheme,
+                n.collection = row.collection
+            """,
+            rows=[
+                {**row, "collection": placed[row["name"]]}
+                for row in rows(label, sorted(present))
+            ],
+        )
+
+
 def build_kg1(
     session: Session,
     exercises_path: Path,
     anatomy_path: Path,
     member_context_path: Path,
     contraindications_path: Path,
+    muscles_path: Path,
+    collections_path: Path,
+    aliases_path: Path,
 ) -> None:
     """Build the movement/clinical graph.
 
@@ -226,17 +370,23 @@ def build_kg1(
         member_context_path: Location of `member-context.json`, read for its
             injuries only — the rest of the member is KG2's.
         contraindications_path: Location of the authored rules.
+        muscles_path: Location of the authored muscle-to-SNOMED mappings.
+        collections_path: Location of the authored SKOS collections.
+        aliases_path: Location of `aliases.json`, read here as the altLabel set.
 
     Raises:
         FileNotFoundError: If a source file is missing.
         pydantic.ValidationError: If a row does not match the expected shape.
         ValueError: If any edge fails to resolve — a severed anatomy hierarchy,
             a joint the catalog names but anatomy.json lacks, a rule naming an
-            unknown pattern, or an injury naming an unknown condition.
+            unknown pattern, or an injury naming an unknown condition. Also if
+            the authored collections have drifted from the catalogue.
     """
     exercises = load_exercises(exercises_path)
     structures = load_anatomy(anatomy_path)
     conditions = load_conditions(contraindications_path)
+    muscles = load_muscles(muscles_path)
+    collections = load_collections(collections_path)
     injuries = load_member_context(member_context_path).injuries
 
     _apply_constraints(session)
@@ -272,3 +422,7 @@ def build_kg1(
     )
     _build_conditions(session, conditions)
     _build_injuries(session, injuries)
+    # Last, because it annotates concepts every step above creates. Nothing
+    # downstream reads these properties to make a decision — they are the
+    # vocabulary's own description of itself.
+    _apply_skos(session, muscles, structures, conditions, collections, aliases_path)

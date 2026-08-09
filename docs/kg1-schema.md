@@ -59,6 +59,22 @@ flowchart LR
 
 ---
 
+## The SKOS layer
+
+Every concept in this graph carries `pref_label`, `alt_labels` and `in_scheme`, and 47 of them carry a typed mapping into SNOMED CT. It is **properties only** — no new node types, no new edges, and nothing downstream reads it to make a decision.
+
+| Taxonomy | Concepts | Grounding |
+|---|---|---|
+| `AnatomicalStructure` | 27 | SNOMED CT — 27 `exactMatch` |
+| `Muscle` | 19 | SNOMED CT — 10 `exactMatch`, 4 `closeMatch`, 4 `narrowMatch`, 1 `broadMatch` |
+| `Condition` | 1 | SNOMED CT — 1 `exactMatch` |
+| `MovementPattern` | 36 | `skos:Collection` — 10 local groups, no external mapping |
+| `Equipment` | 32 | `skos:Collection` — 7 local groups, no external mapping |
+
+Three things were already SKOS under other names and are now called what they are: `aliases.json` is the `skos:altLabel` set, `part_of` is `skos:broader` (partitive), and the anatomy rows' SNOMED columns are a mapping. Why equipment and patterns are deliberately ungrounded, and why OPE and COPPER were evaluated and declined, is in [`ontologies.md`](ontologies.md).
+
+---
+
 ## Two ways anatomy reaches a filter
 
 Safety filtering runs **top-down from the injury**: `Injury -diagnosed_as-> Condition -contraindicates-> MovementPattern <-is_a- Exercise`. Authored, clinical, and fixed-length. A recorded knee injury excludes deep-flexion-under-load and plyometric patterns because a clinician's note says so — not because those patterns happen to load the knee. `affects` is deliberately outside that path.

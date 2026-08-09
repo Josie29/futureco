@@ -1,0 +1,156 @@
+[
+  {
+    "name": "biceps",
+    "match": "exactMatch",
+    "snomed_query": "biceps brachii muscle",
+    "note": "Gym shorthand for the anatomical muscle. Same concept, shorter name.",
+    "snomed_code": "16225001",
+    "snomed_term": "Biceps brachii muscle structure"
+  },
+  {
+    "name": "calves",
+    "match": "exactMatch",
+    "snomed_query": "triceps surae muscle",
+    "note": "Gastrocnemius and soleus together, which is exactly what triceps surae names and exactly what a coach means.",
+    "snomed_code": "53451005",
+    "snomed_term": "Triceps surae muscle structure"
+  },
+  {
+    "name": "chest",
+    "match": "closeMatch",
+    "snomed_query": "pectoralis major muscle",
+    "note": "Close, not exact: a coach's 'chest' also takes in pectoralis minor, which this concept excludes.",
+    "snomed_code": "60005003",
+    "snomed_term": "Pectoralis major muscle structure"
+  },
+  {
+    "name": "core",
+    "match": "narrowMatch",
+    "snomed_query": "abdominal skeletal muscle",
+    "note": "Abdominal skeletal muscle is the closest concept SNOMED carries. Pinned rather than searched: ranked search for the phrase returns the abdominal part of pectoralis major, which is a chest muscle.",
+    "snomed_code": "818995003",
+    "pin": true,
+    "snomed_term": "Abdominal skeletal muscle"
+  },
+  {
+    "name": "deltoids",
+    "match": "exactMatch",
+    "snomed_query": "deltoid muscle",
+    "note": "One muscle, one concept.",
+    "snomed_code": "35259002",
+    "snomed_term": "Structure of deltoid muscle"
+  },
+  {
+    "name": "forearms",
+    "match": "exactMatch",
+    "snomed_query": "muscle of forearm",
+    "note": "A group rather than a single muscle, and SNOMED models it as one too.",
+    "snomed_code": "423313009",
+    "snomed_term": "Structure of muscle of forearm"
+  },
+  {
+    "name": "glutes",
+    "match": "narrowMatch",
+    "snomed_query": "gluteus maximus muscle",
+    "note": "SNOMED has no gluteal-group concept \u2014 searching for one returns lymph nodes and an accessory-muscle variant. Gluteus maximus is the principal member, so the mapping is narrow and says so rather than pretending to cover medius and minimus.",
+    "snomed_code": "206007",
+    "snomed_term": "Structure of gluteus maximus muscle"
+  },
+  {
+    "name": "hamstrings",
+    "match": "closeMatch",
+    "snomed_query": "hamstring muscle",
+    "note": "Resolves to 'Posterior muscle of thigh structure', which is near-synonymous in practice but drawn on a regional rather than a functional boundary.",
+    "snomed_code": "128511007",
+    "snomed_term": "Posterior muscle of thigh structure"
+  },
+  {
+    "name": "hip adductors",
+    "match": "exactMatch",
+    "snomed_query": "adductor muscle of hip joint",
+    "note": "SNOMED locates the group at the hip joint. An earlier query said 'of thigh' and resolved to the group's tendon rather than the muscle \u2014 a different tissue, and the kind of near-miss that makes an unchecked mapping worse than none.",
+    "snomed_code": "303803003",
+    "snomed_term": "Structure of adductor muscle of hip joint"
+  },
+  {
+    "name": "hip flexors",
+    "match": "narrowMatch",
+    "snomed_query": "iliopsoas muscle",
+    "note": "Iliopsoas is the principal hip flexor, but the training term also carries rectus femoris and sartorius, so the SNOMED concept is the narrower of the two.",
+    "snomed_code": "68455001",
+    "snomed_term": "Structure of iliopsoas muscle"
+  },
+  {
+    "name": "lats",
+    "match": "exactMatch",
+    "snomed_query": "latissimus dorsi muscle",
+    "note": "The catalogue's abbreviation of the anatomical name.",
+    "snomed_code": "15665001",
+    "snomed_term": "Structure of latissimus dorsi muscle"
+  },
+  {
+    "name": "lower back",
+    "match": "closeMatch",
+    "snomed_query": "erector spinae muscle",
+    "note": "Deliberately the muscle, not the region. The lumbar-spine reading of 'lower back' is a separate AnatomicalStructure concept mapping to the same SNOMED code by exactMatch \u2014 one external concept, two local ones, at two different strengths. That is the ambiguity `decisions.md` Resolver 1 refuses to resolve by precedence.",
+    "snomed_code": "44947003",
+    "snomed_term": "Structure of erector spinae muscle"
+  },
+  {
+    "name": "middle back",
+    "match": "closeMatch",
+    "snomed_query": "rhomboid muscle",
+    "note": "The catalogue's mid-back is chiefly rhomboids, but working middle trapezius too.",
+    "snomed_code": "277441005",
+    "snomed_term": "Rhomboid muscle structure"
+  },
+  {
+    "name": "obliques",
+    "match": "narrowMatch",
+    "snomed_query": "oblique muscle of abdomen",
+    "note": "Pinned to the external oblique. Search alternated between the internal and external oblique across runs, and an unstable clinical mapping is worse than an explicit one. The catalogue's plural covers both, so this is one of two narrow matches and the row shape holds a single mapping.",
+    "snomed_code": "1179025002",
+    "pin": true,
+    "snomed_term": "Structure of external oblique abdominal muscle"
+  },
+  {
+    "name": "quads",
+    "match": "exactMatch",
+    "snomed_query": "quadriceps femoris muscle",
+    "note": "The catalogue's abbreviation of the anatomical name.",
+    "snomed_code": "21989003",
+    "snomed_term": "Structure of quadriceps femoris muscle"
+  },
+  {
+    "name": "rotator cuff",
+    "match": "exactMatch",
+    "snomed_query": "rotator cuff muscle",
+    "note": "The same SNOMED concept the AnatomicalStructure of this name maps to \u2014 one of the three names claiming two labels, which is why the resolver makes a call site declare which it means.",
+    "snomed_code": "7885001",
+    "snomed_term": "Structure of rotator cuff including muscles and tendons"
+  },
+  {
+    "name": "traps",
+    "match": "exactMatch",
+    "snomed_query": "trapezius muscle",
+    "note": "The catalogue's abbreviation of the anatomical name.",
+    "snomed_code": "31764008",
+    "snomed_term": "Structure of trapezius muscle"
+  },
+  {
+    "name": "triceps",
+    "match": "exactMatch",
+    "snomed_query": "triceps brachii muscle",
+    "note": "Gym shorthand for the anatomical muscle.",
+    "snomed_code": "40284004",
+    "snomed_term": "Triceps brachii muscle structure"
+  },
+  {
+    "name": "upper back",
+    "match": "broadMatch",
+    "snomed_query": "muscle of back",
+    "note": "The loosest row in the file, and marked as such. 'Upper back' is a training region with no muscular concept behind it; the nearest SNOMED concept spans the whole back, so it is broader than what the catalogue means.",
+    "snomed_code": "79112004",
+    "snomed_term": "Skeletal muscle structure of back"
+  }
+]

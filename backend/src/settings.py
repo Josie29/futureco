@@ -69,6 +69,16 @@ class Settings(BaseSettings):
         return self.data_dir / "authored" / "anatomy.json"
 
     @property
+    def muscles_path(self) -> Path:
+        """Path to the authored muscle-to-SNOMED SKOS mappings."""
+        return self.data_dir / "authored" / "muscles.json"
+
+    @property
+    def collections_path(self) -> Path:
+        """Path to the authored SKOS collections over patterns and equipment."""
+        return self.data_dir / "authored" / "collections.json"
+
+    @property
     def contraindications_path(self) -> Path:
         """Path to the authored condition-to-pattern contraindication rules."""
         return self.data_dir / "authored" / "contraindications.json"
