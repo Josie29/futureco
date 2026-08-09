@@ -73,12 +73,61 @@ EDGE_RULES: dict[EdgeTriple, EdgeRule] = {
     (_L.GOAL, _R.TARGETS, _L.MUSCLE): EdgeRule(
         GraphScope.KG2, "What the goal trains. May be empty for a non-muscular goal."
     ),
+    (_L.GOAL, _R.MEASURED_BY, _L.METRIC): EdgeRule(
+        GraphScope.KG2, "How a goal with a number rather than muscles is scored."
+    ),
+    (_L.COACH, _R.COACHES, _L.MEMBER): EdgeRule(
+        GraphScope.KG2, "Authority to read this member. The only edge auth consults."
+    ),
+    (_L.MEMBER, _R.HAS, _L.SESSION): EdgeRule(
+        GraphScope.KG2, "A session on her record, completed or skipped."
+    ),
+    (_L.MEMBER, _R.HAS, _L.MESSAGE): EdgeRule(
+        GraphScope.KG2, "One turn of the coach-member thread. Never a copilot turn."
+    ),
+    (_L.MEMBER, _R.HAS, _L.OBSERVATION): EdgeRule(
+        GraphScope.KG2, "One measurement of one metric, on one date."
+    ),
+    (_L.SESSION, _R.TRAINED, _L.MOVEMENT_PATTERN): EdgeRule(
+        GraphScope.KG2,
+        "What class of work a session did. Pattern, not exercise: none of the "
+        "recorded movements is in the catalog. Absent on a skipped session.",
+    ),
+    (_L.OBSERVATION, _R.MEASURES, _L.METRIC): EdgeRule(
+        GraphScope.KG2, "Which quantity was measured, and so which band it is read against."
+    ),
+    # `mentions` reaches whatever the member's words landed on, so it is five
+    # triples rather than one. Each is the same assertion about a different kind
+    # of concept, which is why they share a sentence.
+    **{
+        (_L.MESSAGE, _R.MENTIONS, target): EdgeRule(
+            GraphScope.KG2,
+            "A concept named in writing. What gives a constraint a citation.",
+        )
+        for target in (
+            _L.EXERCISE,
+            _L.EQUIPMENT,
+            _L.MUSCLE,
+            _L.MOVEMENT_PATTERN,
+            _L.ANATOMICAL_STRUCTURE,
+        )
+    },
 }
 
 # Labels only KG2 authors. Used to place an unrecognised triple when the rule
 # table has no entry for it, so drift lands in a plausible scope instead of
 # defaulting everything to KG1.
-_KG2_AUTHORED: frozenset[NodeLabel] = frozenset({NodeLabel.MEMBER, NodeLabel.GOAL})
+_KG2_AUTHORED: frozenset[NodeLabel] = frozenset(
+    {
+        NodeLabel.MEMBER,
+        NodeLabel.GOAL,
+        NodeLabel.COACH,
+        NodeLabel.SESSION,
+        NodeLabel.MESSAGE,
+        NodeLabel.OBSERVATION,
+        NodeLabel.METRIC,
+    }
+)
 
 
 def rule_for(triple: EdgeTriple) -> EdgeRule | None:

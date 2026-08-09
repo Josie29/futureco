@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 from pydantic import Field
@@ -15,11 +16,27 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "futureco-local"
+
+    anthropic_api_key: str = ""
+    """Optional. Without it the copilot runs retrieval and renders what it found,
+    so `docker compose up` still demonstrates the graph on a cold clone. See
+    `docs/decisions.md`, *Copilot*."""
     data_dir: Path = Field(default=REPO_ROOT / "data")
     model_cache_dir: Path | None = None
     """Where the embedding model lives. None leaves fastembed on its own
     default, which is a directory under the system temp dir. The container sets
     this so the weights can be baked into the image at build time."""
+
+    as_of: date | None = None
+    """The date the dataset is read as "today", overriding the member's own.
+
+    Nothing in this system means "this week" against a wall clock. The sample
+    member's record ends in June 2026, so a query anchored on the real date
+    returns an empty seven-day window and a copilot that says she has not
+    trained. `member.reference_date` resolves this: an explicit override here,
+    otherwise `coach_brief.generated_for`. Left None in normal operation, and
+    exposed on the member endpoint so the frontend stops hardcoding its own
+    copy — see `web/src/lib/dates.ts`."""
 
     @property
     def exercises_path(self) -> Path:
@@ -50,6 +67,26 @@ class Settings(BaseSettings):
     def member_context_path(self) -> Path:
         """Path to the sample member, which KG1 reads for injuries only."""
         return self.data_dir / "member-context.json"
+
+    @property
+    def metrics_path(self) -> Path:
+        """Path to the authored metric definitions and their reference bands."""
+        return self.data_dir / "authored" / "metrics.json"
+
+    @property
+    def session_patterns_path(self) -> Path:
+        """Path to the map from coach shorthand onto catalog movement patterns."""
+        return self.data_dir / "authored" / "session_patterns.json"
+
+    @property
+    def coaches_path(self) -> Path:
+        """Path to the authored coach directory."""
+        return self.data_dir / "authored" / "coaches.json"
+
+    @property
+    def roster_path(self) -> Path:
+        """Path to the synthetic roster filler, which carries no clinical detail."""
+        return self.data_dir / "authored" / "roster.json"
 
 
 settings = Settings()

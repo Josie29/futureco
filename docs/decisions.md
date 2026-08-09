@@ -28,6 +28,40 @@ Deviations from the starting schema in `ASSESSMENT.md:54-56`:
 
 ---
 
+## KG2 build-out — the longitudinal blocks
+
+*2026-08-08*
+
+5. **The question was never whether a block goes in the graph. It was at what grain.** `ASSESSMENT.md:60` lists chat, biomarkers, labs, workout history, adherence and churn as KG2's contents, and the rubric asks whether the graph is *"doing real work, or semantic search with extra steps"*. Those pull in opposite directions only if membership is the question. It isn't. The rule in item 2 above — a node earns its place by having a relationship to express — was read as excluding biomarkers, because `resting_hr_bpm: 58` looks like a scalar attribute with no edge. It isn't that either. It is an observation whose date the format dropped.
+
+   The data proves it: `weight_trend_kg` is already three dated values, so weight *cannot* be a member property; `sleep_hours_last_7_days` is seven with the dates stripped out; every lab is dated. The JSON holds four different flattenings of one shape — a bare scalar, an undated list, a dated list, and a panel — and un-flattening them is what lets one retrieval read all four. So the rule sharpens rather than bends: **traversed entity** when something points at it or it points at something, **leaf observation** when it is `(metric, value, date)`, **property** when it is a timeless scalar. Nothing is in the graph merely so it can be said to be there, and nothing is left out to avoid the question.
+
+6. **`Session -trained-> MovementPattern`, because the exercise join does not exist.** The nine movements in `workout_history` match **zero** catalog exercises — not one, and not as a substring. No `Hip Thrust`, no `Wall Sit`, no `Band Pull-Apart`; the only `Step-Up` is `Barbell Step Up to Knee-Drive`, needing a barbell she does not own. This is the `preferences.dislikes` failure again, which *Data cleanup* 2 fixed by rewriting the data.
+
+   It is not rewritten here, because `kg2-schema.md` had already predicted the answer and deferred it pending the resolver: the reachable concept is a **pattern**, not an exercise. All nine map cleanly. That is also the right grain independent of the accident: longitudinal reasoning cares that she has trained hip-lift twice this week, not which SKU, and pattern is the axis `is_a` already carries as the one substitutions travel along. The mapping is authored in `session_patterns.json` — the same standing-in-for-LLM-extraction shortcut as `goals[].targets` and `injuries[].condition`, now the third instance — and an unmapped movement fails the build, because a session that silently trained nothing reads exactly like one she skipped.
+
+7. **`mentions` is exact and alias only, and it is not the resolver.** `Resolver.resolve` takes one phrase a coach typed deliberately and leans on fuzzy and embedding passes to bridge wording. A message is a sentence containing zero or more concepts nobody flagged, so those same passes would make a build-time assertion reckless. `resolve/mentions.py` slides a window over normalised text and matches only what is certain — which also means the seed needs no embedding model.
+
+   The guard that stops it firing on noise **cannot be a heuristic**. `car` is the catalog's label for controlled articular rotation and collides with a common English noun; unguarded, every message containing the word links to `Standing Miniband Hip Flexion`. A minimum surface length was the obvious fix and it is wrong: `hip` and `car` are both three characters, `knee`, `core` and `lats` are four, and the member's own `db` is two. So the deny-list is authored, holds one entry, and blocks **canonical names only** — an alias always wins, because an alias is an author stating that these characters mean this concept. That asymmetry is what lets `db` through the guard that stops `car`, and it makes `aliases.json` the escape hatch it already was.
+
+   Laterality is deliberately *not* extracted, departing from *Resolver* 6. There, discarding "left" would change a filter's behaviour and lose a clinical distinction. Here the message text is retrieved verbatim beside the edge, so the side is never lost — only not duplicated onto an edge that would then have to be right about which clause it came from.
+
+8. **`MetricDirection` is separate from the reference band, because resting heart rate proves they are different questions.** The band says whether a value is inside it; the direction says what being outside means. Her 58 bpm sits below the standard adult 60–100 band and that is *favourable*. A bare "outside the range" reading would report an athletic resting pulse as abnormal — to a coach, in a clinical-sounding sentence. So `resting_hr` records only an upper bound, `hrv` and `body_weight` record no band at all (`TREND`, because no defensible population range exists and inventing one is worse than admitting none), and `ferritin` is genuinely two-sided (`BAND`).
+
+   The bands live in `data/authored/metrics.json` rather than in code so that *"is this concerning"* is a graph fact. HDL and body-fat percentage both have sex- or age-adjusted ranges; a second member needs different data, not a different branch. Each row cites its source. The copilot reports values against bands and names what is outside them — it does not interpret, diagnose, or advise, and that is a prompt constraint and a documented limit, not a graph mechanism.
+
+9. **`Goal -measured_by-> Metric` is what stops the observation subgraph being a dead end.** Twenty-eight observations hang one hop off `Member` and nothing walks through them, which is a fair thing for a reviewer to press on. Two answers, and the second is the real one. The `Metric` vertex is shared, so seventeen definitions serve twenty-eight readings and one tool with a metric parameter replaces a reader per JSON key. And `goal_sleep` — empty `targets[]`, the one goal the graph could say nothing about — now reaches its readings, which the console had been faking with a hardcoded `SLEEP_TARGET_HOURS` and a `target_date === null` heuristic. One edge deletes both constants and makes goal progress a traversal.
+
+   `Condition -monitored_by-> Metric` is named as an empty slot rather than built: it is the edge that would make observations traversed *clinically*, and it is unpopulated because patellofemoral pain is not monitored by anything on this panel. Populating it means authoring clinical monitoring claims.
+
+10. **The coach brief is read but not ingested; churn is derived.** `coach_brief` is generated output dated `2026-06-04` — yesterday's answer, not member context. A copilot retrieving a stored conclusion is echoing, which is precisely the failure the rubric names. So the brief, `churn_risk`, `adherence.trend` and `typical_session_min` are computed.
+
+    The block is still parsed for two reasons. `generated_for` is the reference date the entire dataset is relative to. And `churn_risk` is the calibration target — which is how the sample's third reason, *"login frequency down vs. prior month"*, was found to have **no supporting data anywhere in the file**. Two of three reasons fall straight out of the graph; the third cannot be derived because nothing supports it, and a derivation that cannot invent it is the point rather than a shortfall.
+
+11. **`Coach` earns a node because `coaches` is a real edge.** One node and one edge, and it turns the console's mock login into an actual authorization check: holding a member id in a URL is not authority to read that member. The three filler roster members stay *out* of the graph — they carry roster metadata and no clinical detail, and as `Member` nodes with no edges they would be exactly what the grain rule rejects. They live in an authored file and 404 as they do today. An unknown member and a member this coach does not coach both return 404 rather than 403, because a 403 confirms the member exists.
+
+---
+
 ## Integration — KG1 ↔ KG2
 
 *2026-08-08*
@@ -36,6 +70,26 @@ Deviations from the starting schema in `ASSESSMENT.md:54-56`:
 
 - **Every useful query crosses the seam.** `Member -has-> Equipment <-requires- Exercise -is_a-> Pattern <-contraindicates- Condition <-diagnosed_as- Injury <-has- Member` is one traversal merged; split, it's four round-trips plus set intersection in app code.
 - **Both graphs reference the same node sets** — `Equipment`, `Exercise`, `Muscle`, `Injury`. Two stores means two copies to keep in sync, so these exist once: KG2's builder resolves against KG1 nodes by name rather than creating its own, and reports unmatched names at build time. A silent no-match yields a graph that looks healthy and returns nothing.
+
+---
+
+## Read API — the coach console's own endpoints
+
+*2026-08-08*
+
+1. **`X-Coach-Id` makes the mock login mean something.** `session.tsx` already claimed *"the API loads the coach from the session"*, and until now nothing did. Every member call carries the header, and `Coach -coaches-> Member` is the whole check. It is still mock auth — the header is self-asserted and a real build replaces it with a verified token — but the *authorization* half is real, and it is the half a graph can express.
+
+   Both an unknown member and one belonging to another coach return **404, not 403**. A 403 confirms the member exists, which turns the id space into something worth enumerating. `/api/coaches` is the one unauthenticated endpoint, because it is the screen a coach reaches before they have an identity to send.
+
+2. **Every figure the console prints is derived at read time, not stored.** Typical session length, sessions this week, goal countdowns, goal measures, churn — all computed from the graph on each request. The console previously computed the same things in `fixtures.ts`, which is why they agreed with the data: they were the data. Moving them server-side is what makes them agree with the *graph*, and the tests assert both against `member-context.json` so a drift in either shows up.
+
+3. **The injury constraint summary is read from the clinical edges.** The authored copy said *"Rules out jumping and landing outright, and flags deep knee bends"* — true when written, and silently wrong the moment a contraindication changes. It is now composed from `Condition -contraindicates|cautions-> Pattern`, so the panel cannot describe a graph it no longer matches. The cost is that it speaks the catalog's vocabulary (*"cardio - plyometric"*) rather than a coach's, which is the same vocabulary the rest of the console already uses.
+
+4. **The churn threshold is measured in sessions, not percentage points.** Written first as a flat 25-point drop, which a test immediately falsified: weekly completion is already normalised against the member's own plan, so on Jordan's four-session week one missed session *is* 25 points — the constant fired on exactly the single slip its own docstring said it should ignore, and would have meant "half a session" for a member training twice a week. The bar is now *more than one planned session's worth*, derived from `training_days_per_week`. Her 50-point fall is two sessions and clears it; a lone 100 → 75 week does not.
+
+5. **Levels are counted, not weighted.** Two or more signals is elevated, one is moderate, none is low. Weights over three binary signals would imply a precision one synthetic member cannot support, and a coach reading *"two signals"* can check both. Absence of data reads as low rather than as risk, so a newly onboarded member does not top the roster.
+
+6. **`as_of` is served, not hardcoded twice.** Nothing in this system means "this week" against a wall clock — the record ends in June 2026, and a real-date anchor empties every window and reports that she has stopped training. The API derives the date from the record and returns it on the member payload; `lib/dates.ts` keeps the literal only as a first-paint fallback. Two hardcoded dates in two languages is how they drift.
 
 ---
 
@@ -99,6 +153,14 @@ Edits to the provided synthetic data, and why each was made rather than worked a
 4. **Added `injuries[].condition` to `member-context.json`.** The clinical condition is only stated in free-text `notes`. An explicit field makes `Injury -diagnosed_as-> Condition` a plain string join, with no inference in the build path — the same shortcut `goals[].targets` already takes. Built out, both would be LLM extraction at ingest.
 
 5. **`estimated_rep_duration` held a rate, so it was inverted and renamed `estimated_rep_seconds`.** Read as seconds, every value was impossible — a bench press rep at 0.3, *World's Greatest Stretch* at 0.1 — and the ordering ran backwards, the fastest movements carrying the largest numbers. Reciprocated, all 50 land on plausible cadences and three on known ones: jump rope 0.53 s/rep, SkiErg 1.67, bench press 5. Two decimals, not the one the source carried, because 0.53 would round to 0.5 and the inversion would stop being reversible; `0` still marks the field inapplicable. Free now, with the `Exercise` model the only reference — once set duration is computed, the same mistake multiplies where it should divide. Two things are left for their own change: one `is_reps: false` row carries a value, inverted rather than zeroed since that is a data judgement; and `is_bilateral` is inverted the same way this field was, `true` on exactly the single-side rows.
+
+6. **Added `goals[].metric` and `profile.trains_at` to `member-context.json`.** Both are facts the file already states in free text, promoted to structured fields so the build path does no inference. The sleep goal is the one goal with a number instead of muscles and nothing joined it to the number, so a metric id makes `Goal -measured_by-> Metric` a plain string join. `trains_at` is stated inside `preferences.notes` — *"Prefers dumbbell and kettlebell work; trains at home"* — and the console prints it in the member header; parsing it out of the sentence at read time, or inferring it from an equipment list with no machines in it, would both be guessing.
+
+   With these, the same substitution now appears four times: `goals[].targets`, `injuries[].condition`, `goals[].metric`, `profile.trains_at`. That is one pattern applied consistently rather than four separate liberties — **built out, all four are one LLM extraction pass over the free text at ingest**, which is the step this POC omits. They are listed together so the omission is legible as a single missing component.
+
+7. **Two dating assumptions, both recorded because the source omits what it needs.** `sleep_hours_last_7_days` is an undated list, so it is dated backwards from the reference date with the **last element as the most recent** — the reading its own field name implies. Reversed, her sleep trend inverts while every count and average stays identical, which is a defect no total would reveal, so a test pins the direction. And `resting_hr_bpm` and `hrv_ms` are bare scalars where every sibling in the block is dated; they are stamped with the reference date, because an undated observation cannot be plotted, compared, or returned by a windowed query — it would exist in the graph and be invisible to every question asked of it.
+
+8. **`Member.weight_kg` is not copied onto the node.** `biomarkers.weight_trend_kg` records the same fact as a dated series, and the latest observation is the answer. Keeping both gives two numbers that can disagree.
 
 ---
 

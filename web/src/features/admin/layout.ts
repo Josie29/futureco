@@ -34,6 +34,15 @@ const ROW_ORDER: NodeLabel[] = [
   NodeLabel.INJURY,
   NodeLabel.MEMBER,
   NodeLabel.GOAL,
+  // KG2's timeline, ordered so each sits near what it reaches: Session by the
+  // patterns it trained, Message by the concepts it names, and the
+  // Observation/Metric pair adjacent because every edge between them is
+  // internal to that pair.
+  NodeLabel.COACH,
+  NodeLabel.SESSION,
+  NodeLabel.MESSAGE,
+  NodeLabel.OBSERVATION,
+  NodeLabel.METRIC,
 ]
 
 export const CANVAS = { width: 860, height: 420 } as const

@@ -1,0 +1,26 @@
+{
+  "_note": "Synthetic roster filler. These three carry roster-level metadata only — a name, a last-session date, an adherence percentage — and no clinical detail whatsoever. They are deliberately NOT in the graph: as Member nodes with no edges they would be exactly what the grain rule in docs/kg2-schema.md rejects, and inventing goals, injuries or history for them would put fabricated clinical detail behind a coach-facing UI. Selecting one returns 404 and the console renders a designed empty state. The populated member comes from the graph, never from this file.",
+  "members": [
+    {
+      "id": "mbr_devin",
+      "name": "Devin Okoro",
+      "last_session_on": "2026-06-04",
+      "adherence_pct": 74,
+      "needs_attention": false
+    },
+    {
+      "id": "mbr_alex",
+      "name": "Alex Mensah",
+      "last_session_on": "2026-06-03",
+      "adherence_pct": 92,
+      "needs_attention": false
+    },
+    {
+      "id": "mbr_priya",
+      "name": "Priya Shah",
+      "last_session_on": "2026-06-01",
+      "adherence_pct": 100,
+      "needs_attention": false
+    }
+  ]
+}

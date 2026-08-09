@@ -16,6 +16,11 @@ export enum NodeLabel {
   CONDITION = "Condition",
   MEMBER = "Member",
   GOAL = "Goal",
+  COACH = "Coach",
+  SESSION = "Session",
+  MESSAGE = "Message",
+  OBSERVATION = "Observation",
+  METRIC = "Metric",
 }
 
 /** Neo4j relationship types. */
@@ -31,6 +36,11 @@ export enum RelType {
   CAUTIONS = "cautions",
   HAS = "has",
   DISLIKES = "dislikes",
+  COACHES = "coaches",
+  TRAINED = "trained",
+  MENTIONS = "mentions",
+  MEASURES = "measures",
+  MEASURED_BY = "measured_by",
 }
 
 /** Which subgraph a request asks for. Edges are only ever KG1 or KG2. */
@@ -118,4 +128,9 @@ export const NODE_LABEL_TEXT: Record<NodeLabel, string> = {
   [NodeLabel.CONDITION]: "Condition",
   [NodeLabel.MEMBER]: "Member",
   [NodeLabel.GOAL]: "Goal",
+  [NodeLabel.COACH]: "Coach",
+  [NodeLabel.SESSION]: "Session",
+  [NodeLabel.MESSAGE]: "Message",
+  [NodeLabel.OBSERVATION]: "Observation",
+  [NodeLabel.METRIC]: "Metric",
 }

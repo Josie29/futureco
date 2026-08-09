@@ -1,5 +1,34 @@
-/** The date the sample dataset is written against. */
+/**
+ * The date the sample dataset is written against.
+ *
+ * A fallback, not the source of truth. The API serves `as_of` on the member
+ * payload and `setReferenceDate` overwrites this — the server derives it from
+ * the record, and two hardcoded dates in two languages is how they drift.
+ * Kept as a literal so the first paint, and the generator mock that still
+ * imports it, have something sane before any member has loaded.
+ */
 export const TODAY = "2026-06-04"
+
+let referenceDate = TODAY
+
+/**
+ * Anchor relative formatting to the dataset's own "today".
+ *
+ * Display only. Anything a coach acts on — days to a goal, sessions this week,
+ * churn — is computed server-side against the same date, so this cannot pull a
+ * decision out of step with the record; the worst it can do is label a
+ * timestamp "yesterday" when the member view has yet to load.
+ *
+ * @param iso A `YYYY-MM-DD` date, from `MemberContext.as_of`.
+ */
+export function setReferenceDate(iso: string): void {
+  referenceDate = iso
+}
+
+/** The date currently being treated as "today". */
+export function today(): string {
+  return referenceDate
+}
 
 /**
  * Parse a date-only string (`YYYY-MM-DD`) as local midnight.
@@ -29,7 +58,7 @@ export function parseCalendarDate(iso: string): Date {
  * @param from Reference date, defaulting to the dataset's "today".
  * @returns Days remaining; negative once the target has passed.
  */
-export function daysUntil(iso: string, from: string = TODAY): number {
+export function daysUntil(iso: string, from: string = referenceDate): number {
   const ms = parseCalendarDate(iso).getTime() - parseCalendarDate(from).getTime()
   return Math.round(ms / 86_400_000)
 }
@@ -72,7 +101,7 @@ export function formatMessageTime(ts: string): string {
     minute: "2-digit",
   })
 
-  const startOfToday = parseCalendarDate(TODAY)
+  const startOfToday = parseCalendarDate(referenceDate)
   const startOfThen = new Date(then)
   startOfThen.setHours(0, 0, 0, 0)
 

@@ -1,8 +1,8 @@
-import { coaches, member, memberMessages, roster } from "@/api/fixtures"
+import { roster } from "@/api/fixtures"
 import { computeEligibility } from "@/api/mock/catalogue"
 import { buildPlan } from "@/api/mock/plans"
-import { answer, openingBrief } from "@/api/mock/copilot"
-import { getTraceById, listTraces, recordCopilotRun, recordPlanRun } from "@/api/mock/traces"
+import { getTraceById, listTraces, recordPlanRun } from "@/api/mock/traces"
+import { currentCoachId } from "@/features/auth/storage"
 import type {
   Coach,
   CopilotMessage,
@@ -20,25 +20,27 @@ import { ConstraintKind } from "@/types"
 /**
  * The API surface, one function per documented endpoint.
  *
- * Every call is async and can fail, because the real ones will be. The bodies
- * are mock-backed today; swapping them for `fetch` is a change to this file
- * and nothing else — no component knows where its data comes from.
+ * The read surface is live against the Python API; the generator and the
+ * traces tab are still mock-backed and belong to a separate stream. Which is
+ * which is marked below. No component knows where its data comes from, which
+ * is what lets the two halves land at different times.
  *
- * | Method | Path                                        |
- * |--------|---------------------------------------------|
- * | GET    | /api/coaches                                |
- * | GET    | /api/members                                |
- * | GET    | /api/members/{id}                           |
- * | GET    | /api/members/{id}/eligibility?disabled=…    |
- * | POST   | /api/members/{id}/plans                     |
- * | POST   | /api/members/{id}/plans/{run_id}/adjust     |
- * | GET    | /api/members/{id}/messages                  |
- * | POST   | /api/members/{id}/copilot                   |
- * | GET    | /api/traces                                 |
- * | GET    | /api/traces/{run_id}                        |
+ * | Method | Path                                        | Backed by |
+ * |--------|---------------------------------------------|-----------|
+ * | GET    | /api/coaches                                | API       |
+ * | GET    | /api/members                                | API       |
+ * | GET    | /api/members/{id}                           | API       |
+ * | GET    | /api/members/{id}/messages                  | API       |
+ * | GET    | /api/members/{id}/copilot                   | API       |
+ * | GET    | /api/members/{id}/eligibility?disabled=…    | mock      |
+ * | POST   | /api/members/{id}/plans                     | mock      |
+ * | POST   | /api/members/{id}/plans/{run_id}/adjust     | mock      |
+ * | POST   | /api/members/{id}/copilot                   | API       |
+ * | GET    | /api/traces                                 | mock      |
+ * | GET    | /api/traces/{run_id}                        | mock      |
  */
 
-/** Rough shape of the latencies the real endpoints will show. */
+/** Rough shape of the latencies the still-mocked endpoints will show. */
 const LATENCY = {
   read: 180,
   eligibility: 120,
@@ -61,39 +63,71 @@ function delay<T>(value: T, ms: number): Promise<T> {
 }
 
 /**
- * Every member-scoped endpoint checks the id, the way a real router would.
+ * GET a JSON endpoint, sending the signed-in coach.
  *
- * @throws ApiError 404 for an unknown member, or one carrying no context.
+ * `X-Coach-Id` comes from the session rather than from any argument, so no
+ * call site can pass an identity it was handed. The API answers 404 unless a
+ * `coaches` edge joins that coach to the member being read.
+ *
+ * @param path Absolute API path. Same-origin: the dev server proxies `/api`.
+ * @returns The decoded body.
+ * @throws ApiError When signed out, or when the API answers non-2xx. The
+ *   server's `detail` is preferred over a generic message, because the API
+ *   already writes those for a person to read.
  */
+async function getJson<T>(path: string): Promise<T> {
+  const coachId = currentCoachId()
+  if (!coachId) throw new ApiError("Not signed in", 401)
+
+  const response = await fetch(path, { headers: { "X-Coach-Id": coachId } })
+  if (!response.ok) {
+    const problem = await response
+      .json()
+      .catch(() => ({ detail: `The API returned ${response.status}.` }))
+    throw new ApiError(problem.detail ?? `The API returned ${response.status}.`, response.status)
+  }
+  return response.json()
+}
+
 /** Injury items are never honoured, whatever the client sends. */
 function dropInjuries(disabled: string[]): string[] {
   return disabled.filter((id) => !id.startsWith(`${ConstraintKind.INJURIES}:`))
 }
 
+/**
+ * Guard for the endpoints still served by the generator mock.
+ *
+ * The live endpoints do this server-side against the graph. This stays only as
+ * long as the mock does, and goes with it.
+ *
+ * @throws ApiError 404 for an unknown member, or one carrying no context.
+ */
 function requireMember(memberId: string): void {
   const entry = roster.find((m) => m.id === memberId)
   if (!entry) throw new ApiError(`No member ${memberId}`, 404)
   if (!entry.has_context) throw new ApiError(`No context loaded for ${entry.name}`, 404)
 }
 
+/** The sign-in list. The one call made before there is a coach to send. */
 export async function getCoaches(): Promise<Coach[]> {
-  return delay(coaches, LATENCY.read)
+  const response = await fetch("/api/coaches")
+  if (!response.ok) throw new ApiError("Couldn't load the coach list", response.status)
+  return response.json()
 }
 
 export async function getRoster(): Promise<RosterEntry[]> {
-  return delay(roster, LATENCY.read)
+  return getJson<RosterEntry[]>("/api/members")
 }
 
 /**
- * Full context for one member.
+ * Full context for one member, assembled from KG2.
  *
- * @throws ApiError 404 when the member carries no context. Only one member is
- *   populated in this dataset; the rest render a designed empty state rather
- *   than fabricated clinical detail.
+ * @throws ApiError 404 when the member is not on this coach's roster, and when
+ *   she is but the graph holds no context for her. The console renders a
+ *   designed empty state for the second rather than fabricated clinical detail.
  */
 export async function getMember(memberId: string): Promise<MemberContext> {
-  requireMember(memberId)
-  return delay(member, LATENCY.read)
+  return getJson<MemberContext>(`/api/members/${encodeURIComponent(memberId)}`)
 }
 
 /**
@@ -143,23 +177,46 @@ export async function adjustPlan(
 }
 
 export async function getMessages(memberId: string): Promise<MemberMessage[]> {
-  requireMember(memberId)
-  return delay(memberMessages, LATENCY.read)
+  return getJson<MemberMessage[]>(`/api/members/${encodeURIComponent(memberId)}/messages`)
 }
 
+/**
+ * The thread, which arrives already answered.
+ *
+ * The morning brief is the first turn rather than a dashboard panel
+ * (ASSESSMENT.md:71), so retrieval has run before the coach types anything.
+ */
 export async function getCopilotThread(memberId: string): Promise<CopilotMessage[]> {
-  requireMember(memberId)
-  return delay([openingBrief], LATENCY.read)
+  return getJson<CopilotMessage[]>(`/api/members/${encodeURIComponent(memberId)}/copilot`)
 }
 
+/**
+ * Ask about the loaded member.
+ *
+ * `id` is ignored — the server assigns the turn's id, because it also records
+ * the run under it. Kept in the signature so the caller's optimistic
+ * placeholder still has something to key on while the answer is in flight.
+ */
 export async function askCopilot(
   memberId: string,
   prompt: string,
-  id: string,
+  _id: string,
 ): Promise<CopilotMessage> {
-  requireMember(memberId)
-  recordCopilotRun(`run_${id}`, prompt)
-  return delay(answer(prompt, id), LATENCY.copilot)
+  const coachId = currentCoachId()
+  if (!coachId) throw new ApiError("Not signed in", 401)
+
+  const response = await fetch(`/api/members/${encodeURIComponent(memberId)}/copilot`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Coach-Id": coachId },
+    body: JSON.stringify({ prompt }),
+  })
+  if (!response.ok) {
+    const problem = await response
+      .json()
+      .catch(() => ({ detail: `The API returned ${response.status}.` }))
+    throw new ApiError(problem.detail ?? "The copilot didn't answer.", response.status)
+  }
+  return response.json()
 }
 
 /**

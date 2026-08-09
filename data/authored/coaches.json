@@ -1,0 +1,7 @@
+[
+  {
+    "id": "coach_01HXSAM",
+    "name": "Sam Ortiz",
+    "note": "Synthetic. `profile.coach_id` names this id but the sample carries no coach directory, so the display name is authored here. The node exists because `Coach -coaches-> Member` is what makes the console's mock login an actual authorization check rather than a label: holding a member id in a URL is not authority to read that member."
+  }
+]

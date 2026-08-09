@@ -22,7 +22,7 @@ def main() -> int:
                 settings.member_context_path,
                 settings.contraindications_path,
             )
-            unmatched_dislikes = build_kg2(session, settings.member_context_path)
+            kg2 = build_kg2(session, settings.member_context_path)
             report = read_report(session)
     except Exception as exc:  # noqa: BLE001 - top-level CLI boundary
         print(f"graph build failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -34,11 +34,25 @@ def main() -> int:
     for rel, count in report.edges_by_type.items():
         print(f"  {f'-[{rel}]->':<22} {count:>4}")  # inner f-string renders "-[targets]->"
 
-    if unmatched_dislikes:
+    # Everything below is a join that did not land where a miss is benign. It
+    # is printed rather than raised, and printed rather than swallowed: an
+    # absence nobody is told about looks identical to a clean build.
+    if kg2.unmatched_dislikes:
         print(
-            f"\nNote: {len(unmatched_dislikes)} disliked exercises are not in the "
-            f"catalog, so nothing is excluded for them: {', '.join(unmatched_dislikes)}.\n"
+            f"\nNote: {len(kg2.unmatched_dislikes)} disliked exercises are not in the "
+            f"catalog, so nothing is excluded for them: {', '.join(kg2.unmatched_dislikes)}.\n"
             f"The preference is still recorded on the node."
+        )
+    if kg2.ambiguous_mentions:
+        print(
+            f"\nNote: {len(kg2.ambiguous_mentions)} phrases in the chat name more than one "
+            f"concept, so no mention edge was written: {', '.join(kg2.ambiguous_mentions)}.\n"
+            f"The message text is stored in full either way."
+        )
+    if kg2.unobserved_metrics:
+        print(
+            f"\nNote: {len(kg2.unobserved_metrics)} defined metrics were never measured for "
+            f"this member: {', '.join(kg2.unobserved_metrics)}."
         )
     return 0
 

@@ -49,15 +49,32 @@ def caption_for(label: NodeLabel, props: dict[str, Any]) -> str:
         A display string. Falls back to the id, then the label, so a node with
         no readable property still draws with something on it.
     """
-    for key in ("name", "text"):
+    for key in ("name", "text", "title"):
         value = props.get(key)
         if value:
             return str(value)
+
     if label is NodeLabel.INJURY:
         # No name property; `region` already reads as "left knee".
         region = props.get("region") or props.get("joint")
         if region:
             return str(region)
+
+    if label is NodeLabel.OBSERVATION:
+        # "sleep_hours 6.1" rather than the id, so a fan of 28 observations
+        # around one member is readable without opening each node.
+        metric, value = props.get("metric_id"), props.get("value")
+        if metric is not None and value is not None:
+            return f"{metric} {value}"
+
+    if label is NodeLabel.MESSAGE:
+        # The opening words, which is how anyone refers to a message. Truncated
+        # because a caption is a label on a node, not the message itself — the
+        # full text is in the property panel.
+        text = str(props.get("text") or "")
+        if text:
+            return text if len(text) <= 40 else f"{text[:39]}…"
+
     return str(props.get("id") or label.value)
 
 

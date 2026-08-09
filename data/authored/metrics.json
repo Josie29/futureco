@@ -1,0 +1,175 @@
+{
+  "_note": "Reference bands for the metrics KG2 observes. Standard published adult ranges, cited per row, applied to synthetic data. They exist so 'is this value inside its band' is a graph fact rather than a constant in Python, and so a second member with age- or sex-adjusted bands needs no code change. The copilot reports values against these bands and names what sits outside them; it does not interpret, diagnose, or advise.",
+  "metrics": [
+    {
+      "id": "sleep_hours",
+      "name": "Sleep",
+      "unit": "h",
+      "category": "biomarker",
+      "direction": "higher_better",
+      "optimal_low": 7.0,
+      "optimal_high": null,
+      "reference": "Her own stated target is 7+ hours on weeknights (goals[] goal_sleep); general adult guidance is 7-9 h. This is the one band drawn from the member's goal rather than a population range, which is why goal_sleep can hang measured_by off it."
+    },
+    {
+      "id": "resting_hr",
+      "name": "Resting heart rate",
+      "unit": "bpm",
+      "category": "biomarker",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 100.0,
+      "reference": "Adult resting heart rate is conventionally 60-100 bpm. Only the upper bound is recorded: values below 60 are common in trained adults, so a two-sided band would flag her 58 bpm as abnormal when it is favourable. This row is why MetricDirection exists separately from the band."
+    },
+    {
+      "id": "hrv",
+      "name": "Heart rate variability",
+      "unit": "ms",
+      "category": "biomarker",
+      "direction": "trend",
+      "optimal_low": null,
+      "optimal_high": null,
+      "reference": "RMSSD varies by an order of magnitude across healthy adults and by age. No population band is defensible, so none is authored — only change against her own baseline is meaningful. Left deliberately empty rather than filled with a plausible-looking number."
+    },
+    {
+      "id": "body_weight",
+      "name": "Body weight",
+      "unit": "kg",
+      "category": "body_composition",
+      "direction": "trend",
+      "optimal_low": null,
+      "optimal_high": null,
+      "reference": "No target weight is recorded in any of her goals, so there is nothing to measure against. A band here would be invented."
+    },
+    {
+      "id": "ldl",
+      "name": "LDL cholesterol",
+      "unit": "mg/dL",
+      "category": "lab",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 100.0,
+      "reference": "Optimal LDL is under 100 mg/dL; 100-129 is near-optimal. Her 118 sits outside the optimal band, which is the only lab value in this sample that does so on the high side."
+    },
+    {
+      "id": "hdl",
+      "name": "HDL cholesterol",
+      "unit": "mg/dL",
+      "category": "lab",
+      "direction": "higher_better",
+      "optimal_low": 50.0,
+      "optimal_high": null,
+      "reference": "50 mg/dL or above is the conventional threshold for women; 40 for men. Sex-specific, which is the case that justifies keeping bands as data rather than constants."
+    },
+    {
+      "id": "triglycerides",
+      "name": "Triglycerides",
+      "unit": "mg/dL",
+      "category": "lab",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 150.0,
+      "reference": "Normal fasting triglycerides are under 150 mg/dL."
+    },
+    {
+      "id": "hba1c",
+      "name": "HbA1c",
+      "unit": "%",
+      "category": "lab",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 5.7,
+      "reference": "Under 5.7% is normal; 5.7-6.4% is the prediabetic range."
+    },
+    {
+      "id": "vitamin_d",
+      "name": "Vitamin D",
+      "unit": "ng/mL",
+      "category": "lab",
+      "direction": "higher_better",
+      "optimal_low": 30.0,
+      "optimal_high": null,
+      "reference": "Sufficiency is 30 ng/mL or above; 20-29 is insufficient. Her 28 sits just below, and it is the only value in the panel outside its band on the low side."
+    },
+    {
+      "id": "ferritin",
+      "name": "Ferritin",
+      "unit": "ng/mL",
+      "category": "lab",
+      "direction": "band",
+      "optimal_low": 15.0,
+      "optimal_high": 150.0,
+      "reference": "Adult female reference range is 15-150 ng/mL. Genuinely two-sided: both deficiency and overload matter, which is what BAND means and what neither HIGHER_BETTER nor LOWER_BETTER can express."
+    },
+    {
+      "id": "crp",
+      "name": "C-reactive protein",
+      "unit": "mg/L",
+      "category": "lab",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 3.0,
+      "reference": "High-sensitivity CRP under 3.0 mg/L corresponds to low cardiovascular risk."
+    },
+    {
+      "id": "body_fat_pct",
+      "name": "Body fat",
+      "unit": "%",
+      "category": "body_composition",
+      "direction": "band",
+      "optimal_low": 21.0,
+      "optimal_high": 33.0,
+      "reference": "Acceptable range for women aged 40-59 is roughly 21-33%. Age- and sex-specific, so the band belongs with the member's data rather than in code."
+    },
+    {
+      "id": "lean_mass",
+      "name": "Lean mass",
+      "unit": "kg",
+      "category": "body_composition",
+      "direction": "trend",
+      "optimal_low": null,
+      "optimal_high": null,
+      "reference": "No population band; absolute lean mass depends on height and frame. Direction of travel is what a strength goal cares about."
+    },
+    {
+      "id": "fat_mass",
+      "name": "Fat mass",
+      "unit": "kg",
+      "category": "body_composition",
+      "direction": "trend",
+      "optimal_low": null,
+      "optimal_high": null,
+      "reference": "Derived from body weight and body fat percentage, both of which carry their own rows. Kept as its own metric because the scan reports it, and dropping a reported value would make the panel look incomplete."
+    },
+    {
+      "id": "bone_density_z",
+      "name": "Bone density Z-score",
+      "unit": "Z",
+      "category": "body_composition",
+      "direction": "higher_better",
+      "optimal_low": -2.0,
+      "optimal_high": null,
+      "reference": "A Z-score of -2.0 or above is within the expected range for age. Z rather than T because she is premenopausal."
+    },
+    {
+      "id": "visceral_fat",
+      "name": "Visceral fat area",
+      "unit": "cm2",
+      "category": "body_composition",
+      "direction": "lower_better",
+      "optimal_low": null,
+      "optimal_high": 100.0,
+      "reference": "100 cm2 is the commonly cited threshold above which metabolic risk rises."
+    },
+    {
+      "id": "weekly_adherence",
+      "name": "Weekly completion",
+      "unit": "%",
+      "category": "adherence",
+      "direction": "higher_better",
+      "optimal_low": 100.0,
+      "optimal_high": null,
+      "reference": "Her plan is 4 sessions a week (preferences.training_days_per_week), so 100% means every planned session was done. The band is 100 rather than a softer number because the metric is already normalised against her own plan — anything below it is a session she was scheduled for and did not do."
+    }
+  ]
+}

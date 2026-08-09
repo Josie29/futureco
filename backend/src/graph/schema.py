@@ -24,6 +24,11 @@ class NodeLabel(StrEnum):
     CONDITION = "Condition"
     MEMBER = "Member"
     GOAL = "Goal"
+    COACH = "Coach"
+    SESSION = "Session"
+    MESSAGE = "Message"
+    OBSERVATION = "Observation"
+    METRIC = "Metric"
 
 
 class RelType(StrEnum):
@@ -40,6 +45,11 @@ class RelType(StrEnum):
     CAUTIONS = "cautions"
     HAS = "has"
     DISLIKES = "dislikes"
+    COACHES = "coaches"
+    TRAINED = "trained"
+    MENTIONS = "mentions"
+    MEASURES = "measures"
+    MEASURED_BY = "measured_by"
 
 
 class AnatomicalTier(StrEnum):
@@ -51,3 +61,35 @@ class AnatomicalTier(StrEnum):
     REGION = "region"
     JOINT = "joint"
     SUBSTRUCTURE = "substructure"
+
+
+class MetricCategory(StrEnum):
+    """What kind of measurement a `Metric` describes.
+
+    Coarse on purpose: it exists so a copilot can ask for "her biomarkers"
+    without naming seven metrics, not to carry clinical taxonomy.
+    """
+
+    BIOMARKER = "biomarker"
+    LAB = "lab"
+    BODY_COMPOSITION = "body_composition"
+    ADHERENCE = "adherence"
+
+
+class MetricDirection(StrEnum):
+    """Which way is favourable, for a metric that has a reference band.
+
+    Separate from the band itself because the two answer different questions.
+    `optimal_low`/`optimal_high` say whether a value is inside the band;
+    direction says what being outside it means. Resting heart rate is the case
+    that forces the split: 58 bpm sits below the 60–100 adult band and that is
+    a good thing, so a bare "outside the range" reading would be wrong.
+    """
+
+    HIGHER_BETTER = "higher_better"
+    LOWER_BETTER = "lower_better"
+    BAND = "band"
+    """Favourable inside the band, unfavourable either side of it."""
+
+    TREND = "trend"
+    """No reference band exists. Only movement over time is meaningful."""

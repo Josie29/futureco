@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { QUICK_PROMPTS } from "@/api/mock/copilot"
+import { QUICK_PROMPTS } from "@/features/copilot/prompts"
 import { CopilotChart } from "@/features/copilot/CopilotChart"
 import { formatMessageTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"

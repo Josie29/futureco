@@ -3,6 +3,7 @@ name = "futureco-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.116",
     "fastapi>=0.120",
     "fastembed>=0.8.0",
     "neo4j>=5.28",

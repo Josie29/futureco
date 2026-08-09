@@ -1,0 +1,47 @@
+[
+  {
+    "movement": "Goblet Squat (box-supported)",
+    "patterns": ["lower push - squat"],
+    "note": "A goblet squat to a box. The catalog stocks two goblet squats — Kettlebell Goblet Cyclist Squat and Dumbbell Goblet Split Squat — but neither is this movement, and the box support is the whole point clinically. The pattern is what transfers."
+  },
+  {
+    "movement": "Hip Thrust",
+    "patterns": ["lower pull - hip lift"],
+    "note": "The catalog's hip-lift pattern is stocked only by the two hamstring walkouts. A hip thrust is the same kinematic class and no catalog row names it."
+  },
+  {
+    "movement": "Banded Lateral Walk",
+    "patterns": ["lower - abduction"],
+    "note": "Frontal-plane hip abduction against a loop band. Abduction appears in the catalog only as a secondary pattern on the crossback lunge, so this is the one session naming it as the primary work."
+  },
+  {
+    "movement": "DB Floor Press",
+    "patterns": ["upper push - horizontal"],
+    "note": "Coach shorthand for a dumbbell floor press. Horizontal push, and the floor variant is the bench-free version she can do at home."
+  },
+  {
+    "movement": "Half-Kneeling DB Press",
+    "patterns": ["upper push - vertical"],
+    "note": "Single-arm overhead press from half-kneeling. Vertical push; the stance is a stability choice, not a second pattern."
+  },
+  {
+    "movement": "Band Pull-Apart",
+    "patterns": ["upper pull - horizontal"],
+    "note": "Scapular retraction against a band. Horizontal pull, the lightest expression of it in the catalog's vocabulary."
+  },
+  {
+    "movement": "Step-Up",
+    "patterns": ["lower push - step-up"],
+    "note": "The catalog's only step-up is Barbell Step Up to Knee-Drive, which needs a barbell she does not own — so she did not do that exercise, but she did do that pattern."
+  },
+  {
+    "movement": "KB Romanian Deadlift",
+    "patterns": ["lower pull - hip lift"],
+    "note": "Kettlebell RDL — a hip hinge. Shares the pattern with Hip Thrust, which is why the two lower-body sessions read as repeated hip-lift work rather than as two unrelated movements."
+  },
+  {
+    "movement": "Wall Sit",
+    "patterns": ["lower push - squat", "isometric"],
+    "note": "The only two-pattern row here, and the reason patterns[] is a list. A wall sit is an isometric held in a squat position; recording only one loses either the joint position or the fact that nothing moved."
+  }
+]

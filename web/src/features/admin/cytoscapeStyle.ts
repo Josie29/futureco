@@ -9,12 +9,19 @@ import { NodeLabel, RelType } from "@/types/graph"
  * meaning. Injury and Condition are red because they *are* the safety story,
  * the same red-wash the constraint pills use.
  *
- * Hue is not the channel doing the work. Only three types are actually
- * coloured — Member and Goal in cobalt, Injury and Condition in red-wash — and
- * the remaining five separate by *weight* instead: black fill, white with a
- * black outline, white with a faint outline, filled grey with no outline, pale
- * grey with grey text. That ordering survives greyscale, which a five-hue
- * palette would not.
+ * Hue is not the channel doing the work. Only four types are actually
+ * coloured — Member, Goal and Coach in cobalt, Injury and Condition in
+ * red-wash — and the rest separate by *weight* instead: black fill, white with
+ * a black outline, white with a faint outline, filled grey with no outline,
+ * pale grey with grey text. That ordering survives greyscale, which a
+ * fourteen-hue palette would not.
+ *
+ * The ladder is now at capacity. KG2's timeline labels take the light end
+ * deliberately: Observation is the faintest because there are twenty-eight of
+ * them fanning off one member and they should recede, while Metric — the vertex
+ * they all point at — sits one step heavier because it is a hub. Past this,
+ * adding labels means finding a channel other than weight rather than
+ * subdividing greys further.
  *
  * Nothing here is legible by appearance alone either: every node prints its
  * caption, the legend chips are named, and selecting one names its type.
@@ -93,6 +100,44 @@ export const LABEL_STYLE: Record<NodeLabel, LabelStyle> = {
     text: "#0d0d0f",
     padding: 9,
     borderWidth: 2,
+  },
+  // Cobalt outline, white fill: a person, and not the one the console is
+  // about. Member keeps the solid cobalt.
+  [NodeLabel.COACH]: {
+    bg: "#ffffff",
+    border: "#2b3fe8",
+    text: "#2b3fe8",
+    padding: 9,
+    borderWidth: 1.5,
+  },
+  [NodeLabel.SESSION]: {
+    bg: "#ffffff",
+    border: "#5f5f68",
+    text: "#0d0d0f",
+    padding: 8,
+    borderWidth: 1.5,
+  },
+  [NodeLabel.MESSAGE]: {
+    bg: "#f6f6f3",
+    border: "#c3c3c8",
+    text: "#5f5f68",
+    padding: 7,
+    borderWidth: 1,
+  },
+  [NodeLabel.METRIC]: {
+    bg: "#e2e2dc",
+    border: "#9a9aa1",
+    text: "#0d0d0f",
+    padding: 7,
+    borderWidth: 1,
+  },
+  // The faintest thing on the canvas, and the most numerous.
+  [NodeLabel.OBSERVATION]: {
+    bg: "#f6f6f3",
+    border: "#dededa",
+    text: "#767680",
+    padding: 6,
+    borderWidth: 1,
   },
 }
 

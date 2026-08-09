@@ -10,7 +10,8 @@
     "timezone": "America/Los_Angeles",
     "member_since": "2024-09-15",
     "coach_id": "coach_01HXSAM",
-    "tier": "1:1 Coaching"
+    "tier": "1:1 Coaching",
+    "trains_at": "home"
   },
   "goals": [
     {
@@ -38,7 +39,8 @@
       "text": "Average 7+ hours of sleep on weeknights",
       "priority": 2,
       "target_date": null,
-      "targets": []
+      "targets": [],
+      "metric": "sleep_hours"
     }
   ],
   "preferences": {

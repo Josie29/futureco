@@ -1,6 +1,6 @@
 import memberJson from "@data/member-context.json"
 import exercisesJson from "@data/exercises.json"
-import { daysUntil } from "@/lib/dates"
+import { TODAY, daysUntil } from "@/lib/dates"
 import {
   ConstraintEffect,
   ConstraintKind,
@@ -206,6 +206,9 @@ const constraints: Constraint[] = [
 ]
 
 export const member: MemberContext = {
+  // The live endpoint derives this from the record; the fixture states it,
+  // because the generator mock below still reads these shapes.
+  as_of: TODAY,
   id: raw.profile.id,
   name: raw.profile.name,
   initials: initialsOf(raw.profile.name),

@@ -70,5 +70,17 @@
     "canonical": "upper push - vertical",
     "label": "MovementPattern",
     "note": "Calibration showed the vector pass ranks this correctly at 0.528 but the term 'deadlift', which must not resolve at all, reaches 0.523 \u2014 a five-thousandth gap. No vector threshold separates them, so the mapping is authored instead of inferred."
+  },
+  {
+    "term": "dbs",
+    "canonical": "Dumbbell",
+    "label": "Equipment",
+    "note": "How the member writes it: 'Still no barbell at home btw \u2014 only DBs and a kettlebell.' Three characters with no lexical overlap, so no automatic pass reaches it, and without this the strongest mentions edge in the sample \u2014 an equipment constraint traceable to the message where she stated it \u2014 does not land."
+  },
+  {
+    "term": "db",
+    "canonical": "Dumbbell",
+    "label": "Equipment",
+    "note": "Singular of the above. Listed separately because the mention scanner matches surface forms literally and does not stem."
   }
 ]

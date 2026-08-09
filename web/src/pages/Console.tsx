@@ -19,6 +19,7 @@ import { Goals } from "@/features/member/Goals"
 import { MemberHeader } from "@/features/member/MemberHeader"
 import { RecentSessions } from "@/features/member/RecentSessions"
 import { Rail } from "@/features/roster/Rail"
+import { setReferenceDate } from "@/lib/dates"
 import { cn } from "@/lib/utils"
 import type { CopilotMessage, PlanRequest, WorkoutPlan } from "@/types"
 
@@ -62,7 +63,14 @@ export default function Console() {
   const roster = useQuery({ queryKey: ["roster"], queryFn: getRoster })
   const member = useQuery({
     queryKey: ["member", memberId],
-    queryFn: () => getMember(memberId),
+    queryFn: async () => {
+      const context = await getMember(memberId)
+      // The API derives the dataset's "today" from the record. Adopting it here
+      // keeps relative timestamps in the chat agreeing with the figures the
+      // server computed against the same date.
+      setReferenceDate(context.as_of)
+      return context
+    },
     enabled: Boolean(memberId),
     retry: false,
   })

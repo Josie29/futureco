@@ -97,6 +97,16 @@ export enum ChartKind {
   SLEEP = "sleep",
   MESSAGE_PATTERN = "message_pattern",
   WEEKLY_COMPARISON = "weekly_comparison",
+  /**
+   * Any metric plotted against its own reference band.
+   *
+   * The general case, and free once observations are reified: sleep, weight,
+   * HRV and every lab value are the same shape, so plotting one is the same
+   * code as plotting another. The four named kinds stay because each carries a
+   * framing a generic series can't — adherence is read against her plan, sleep
+   * against her goal, message pattern against the adherence weeks.
+   */
+  METRIC = "metric",
 }
 
 export interface Coach {
@@ -202,6 +212,15 @@ export interface MemberContext {
   tier: string
   member_since: string
   trains_at: string
+  /**
+   * The date this dataset is read as "today".
+   *
+   * Every window in the system is relative to this rather than to a wall clock.
+   * The record ends in June 2026, so a real-date anchor empties "this week" and
+   * makes her look like she stopped training. Served so the console doesn't
+   * keep a second copy — see `lib/dates.ts`.
+   */
+  as_of: string
   goals: Goal[]
   preferred_session_min: number
   /** Mean duration of completed sessions — derived, not stored. */
@@ -455,8 +474,8 @@ export interface PlanRequest {
 export interface ChatAttachment {
   type: "image"
   caption: string
-  /** Absent in the sample data, so the UI renders a captioned placeholder. */
-  url?: string
+  /** Null in the sample data, so the UI renders a captioned placeholder. */
+  url?: string | null
 }
 
 /** A member message quoted inside a copilot answer as retrieval evidence. */
@@ -500,11 +519,20 @@ export interface CopilotMessage {
   ts: string
   from: "coach" | "copilot"
   /** Paragraphs. The brief runs long on purpose. */
-  paragraphs: { lead?: string; text: string }[]
+  paragraphs: { lead?: string | null; text: string }[]
   cites?: Citation[]
-  chart?: ChartPayload
+  chart?: ChartPayload | null
   /** True while the answer is in flight; renders a skeleton. */
   pending?: boolean
+  /**
+   * Why this answer is less than a full one, or null when it is complete.
+   *
+   * Set when prose synthesis is unavailable, when a citation was dropped as
+   * invented, or when the model declined. Rendered as a banner above the
+   * answer — an answer that quietly did less than it appears to would be the
+   * worst thing this surface could show, so the console never hides it.
+   */
+  degraded?: string | null
 }
 
 /** A quick prompt in the palette. `chart` ones return a ChartPayload. */

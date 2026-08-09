@@ -6,7 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
 from api.errors import register_error_handlers
+from api.routes import copilot as copilot_routes
 from api.routes import graph as graph_routes
+from api.routes import members as member_routes
+from api.traces import InMemoryTraceStore, TraceStore
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
 from graph.schema import NodeLabel
@@ -23,10 +26,17 @@ class Runtime:
     request would spend the whole latency budget before any work started.
     """
 
-    def __init__(self, driver: Driver, resolver: Resolver, report: BuildReport) -> None:
+    def __init__(
+        self,
+        driver: Driver,
+        resolver: Resolver,
+        report: BuildReport,
+        traces: TraceStore,
+    ) -> None:
         self.driver = driver
         self.resolver = resolver
         self.report = report
+        self.traces = traces
 
 
 @asynccontextmanager
@@ -44,7 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             report = read_report(session)
         # Touching the matrix forces the model load and the concept embed now.
         vocabulary.similarities("warm")
-        app.state.runtime = Runtime(driver, Resolver(vocabulary), report)
+        app.state.runtime = Runtime(driver, Resolver(vocabulary), report, InMemoryTraceStore())
         yield
     finally:
         driver.close()
@@ -58,11 +68,18 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET", "POST"],
+    # `X-Coach-Id` is a request header the console sends on every member call,
+    # so the wildcard here is load-bearing rather than convenience.
     allow_headers=["*"],
 )
 
+
 register_error_handlers(app)
 app.include_router(graph_routes.router, prefix="/api")
+app.include_router(member_routes.router, prefix="/api")
+app.include_router(copilot_routes.router, prefix="/api")
+# `copilot_routes.traces_router` is deliberately not mounted — see the note at
+# its definition. The store it reads is live; the surface is another stream's.
 
 
 def runtime() -> Runtime:
