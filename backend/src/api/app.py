@@ -5,10 +5,13 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
+from agent.client import build_extractor
+from agent.extract import Extractor
 from api.errors import register_error_handlers
 from api.routes import copilot as copilot_routes
 from api.routes import graph as graph_routes
 from api.routes import members as member_routes
+from api.routes import plans as plan_routes
 from api.traces import InMemoryTraceStore, TraceStore
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
@@ -31,12 +34,25 @@ class Runtime:
         driver: Driver,
         resolver: Resolver,
         report: BuildReport,
+        extractor: Extractor,
+        live_extraction: bool,
         traces: TraceStore,
     ) -> None:
         self.driver = driver
         self.resolver = resolver
         self.report = report
+        self.extractor = extractor
+        self.live_extraction = live_extraction
+        """False when no API key is configured. Not a degraded mode for the
+        generator: extraction is the entire model surface there, so the plans
+        are the same — they just have to be asked for as instructions rather
+        than as a sentence. The copilot degrades differently, because synthesis
+        *is* its output; it says so on every answer it returns."""
+
         self.traces = traces
+        """Runs the copilot has recorded. In memory and bounded — see
+        `api/traces.py` for why the durable store is still the generator's to
+        choose."""
 
 
 @asynccontextmanager
@@ -54,7 +70,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             report = read_report(session)
         # Touching the matrix forces the model load and the concept embed now.
         vocabulary.similarities("warm")
-        app.state.runtime = Runtime(driver, Resolver(vocabulary), report, InMemoryTraceStore())
+        extractor, live = build_extractor()
+        app.state.runtime = Runtime(
+            driver, Resolver(vocabulary), report, extractor, live, InMemoryTraceStore()
+        )
         yield
     finally:
         driver.close()
@@ -77,9 +96,12 @@ app.add_middleware(
 register_error_handlers(app)
 app.include_router(graph_routes.router, prefix="/api")
 app.include_router(member_routes.router, prefix="/api")
+app.include_router(plan_routes.router, prefix="/api")
 app.include_router(copilot_routes.router, prefix="/api")
-# `copilot_routes.traces_router` is deliberately not mounted — see the note at
-# its definition. The store it reads is live; the surface is another stream's.
+# `copilot_routes.traces_router` stays unmounted. Only the copilot emits spans;
+# mounting it now would give the console's Traces tab a list containing half the
+# runs it shows today, which is worse than the mock it would replace. It goes up
+# when the generator emits spans too — see docs/copilot-plan.md, D4.
 
 
 def runtime() -> Runtime:
@@ -105,6 +127,7 @@ def health(run: Runtime = Depends(runtime), session: Session = Depends(graph)) -
         "status": "ok",
         "graph": {"nodes": live.node_total, "edges": live.edge_total},
         "vocabulary": {"concepts": len(run.resolver.vocabulary.concepts)},
+        "extraction": "live" if run.live_extraction else "scripted",
     }
 
 

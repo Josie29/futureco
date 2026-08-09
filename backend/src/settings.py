@@ -17,11 +17,17 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "futureco-local"
 
-    anthropic_api_key: str = ""
-    """Optional. Without it the copilot runs retrieval and renders what it found,
-    so `docker compose up` still demonstrates the graph on a cold clone. See
-    `docs/decisions.md`, *Copilot*."""
     data_dir: Path = Field(default=REPO_ROOT / "data")
+
+    anthropic_api_key: str | None = None
+    """Optional, and both model surfaces degrade rather than fail without it.
+
+    The generator swaps in a scripted extractor, so its plans are identical and
+    only the input shape changes. The copilot runs the same retrieval and
+    renders what it found without interpreting it. Either way `docker compose
+    up` still demonstrates the graph on a cold clone."""
+
+    anthropic_model: str = "claude-opus-5"
     model_cache_dir: Path | None = None
     """Where the embedding model lives. None leaves fastembed on its own
     default, which is a directory under the system temp dir. The container sets
@@ -62,6 +68,11 @@ class Settings(BaseSettings):
     def resolver_cases_path(self) -> Path:
         """Path to the labelled cases that calibrate and test the resolver."""
         return self.data_dir / "authored" / "resolver_cases.json"
+
+    @property
+    def extraction_cases_path(self) -> Path:
+        """Path to the labelled cases that stand in for, and measure, the model."""
+        return self.data_dir / "authored" / "extraction_cases.json"
 
     @property
     def member_context_path(self) -> Path:

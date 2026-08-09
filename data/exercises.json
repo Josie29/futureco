@@ -19,7 +19,7 @@
       "Plate",
       "Rack"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -50,7 +50,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -77,7 +77,7 @@
       "Adjustable Bench - Decline",
       "Dumbbell"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -103,7 +103,7 @@
       "Dumbbell",
       "Adjustable Bench - Incline"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -131,7 +131,7 @@
       "Dumbbell",
       "Flat Bench"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -161,7 +161,7 @@
     "equipment_required": [
       "Pull-Up Bar"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": false,
@@ -191,7 +191,7 @@
       "Pull-Up Bar",
       "Resistance Band - Loop"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -218,7 +218,7 @@
     "equipment_required": [
       "Seated Lat Pulldown Machine"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_arm",
     "priority_tier": 2,
     "is_reps": true,
@@ -247,13 +247,13 @@
       "Stability Ball",
       "Yoga Mat"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": false,
     "is_duration": true,
     "supports_weight": false,
-    "estimated_rep_seconds": 5.0,
+    "estimated_rep_seconds": 0.0,
     "bilateral_pair_id": "aecd6652-9705-4609-8f05-8b37d3d9b7da"
   },
   {
@@ -280,7 +280,7 @@
     "equipment_required": [
       "Medicine Ball"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": true,
@@ -306,7 +306,7 @@
     "equipment_required": [
       "Dumbbell"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -335,7 +335,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -365,7 +365,7 @@
     "equipment_required": [
       "Adjustable Bench - Incline"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -390,7 +390,7 @@
       "EZ Bar",
       "Preacher Curl Bench"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -415,7 +415,7 @@
     "equipment_required": [
       "Resistance Band - Loop"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -440,7 +440,7 @@
       "Preacher Curl Bench",
       "Dumbbell"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_arm",
     "priority_tier": 2,
     "is_reps": true,
@@ -466,7 +466,7 @@
       "Dumbbell",
       "Flat Bench"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_arm",
     "priority_tier": 2,
     "is_reps": true,
@@ -491,7 +491,7 @@
       "Cable Resistance Machine",
       "Handle Attachment"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_arm",
     "priority_tier": 2,
     "is_reps": true,
@@ -518,7 +518,7 @@
     "equipment_required": [
       "Suspension Trainer"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -546,7 +546,7 @@
       "Kettlebell",
       "Slant Board"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -573,7 +573,7 @@
     "equipment_required": [
       "Resistance Band - Loop"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -599,7 +599,7 @@
       "cardio"
     ],
     "equipment_required": [],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -626,7 +626,7 @@
     "equipment_required": [
       "Medicine Ball"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -653,7 +653,7 @@
     "equipment_required": [
       "Dumbbell"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -684,7 +684,7 @@
       "Kettlebell",
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -714,7 +714,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -740,7 +740,7 @@
       "mobility - dynamic"
     ],
     "equipment_required": [],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -771,7 +771,7 @@
       "Medicine Ball",
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -801,7 +801,7 @@
     "equipment_required": [
       "Dumbbell"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -831,7 +831,7 @@
     "equipment_required": [
       "Stair Climber"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": false,
@@ -860,7 +860,7 @@
       "Plate",
       "Rack"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -893,7 +893,7 @@
       "Box",
       "Plate"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -921,7 +921,7 @@
       "lower push - squat"
     ],
     "equipment_required": [],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -950,7 +950,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -979,7 +979,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1009,7 +1009,7 @@
     "equipment_required": [
       "Sandbag"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": false,
@@ -1040,7 +1040,7 @@
     "equipment_required": [
       "BOSU"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1066,7 +1066,7 @@
       "cardio"
     ],
     "equipment_required": [],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1090,7 +1090,7 @@
     "equipment_required": [
       "Horizontal Leg Press Machine"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1115,7 +1115,7 @@
     "equipment_required": [
       "Jump Rope"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,
@@ -1141,7 +1141,7 @@
       "Lacrosse Ball",
       "Wall"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": false,
@@ -1170,7 +1170,7 @@
       "Dumbbell",
       "Adjustable Bench - Incline"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_arm",
     "priority_tier": 2,
     "is_reps": true,
@@ -1198,7 +1198,7 @@
     "equipment_required": [
       "Chest Supported Row Machine"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1230,7 +1230,7 @@
       "Flat Bench",
       "Yoga Mat"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": false,
@@ -1257,7 +1257,7 @@
     "equipment_required": [
       "Resistance Band - With Handles"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": true,
@@ -1286,7 +1286,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": false,
@@ -1318,7 +1318,7 @@
     "equipment_required": [
       "SkiErg"
     ],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1343,7 +1343,7 @@
     "equipment_required": [
       "Yoga Mat"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_side",
     "priority_tier": 2,
     "is_reps": false,
@@ -1367,7 +1367,7 @@
       "regen"
     ],
     "equipment_required": [],
-    "is_bilateral": false,
+    "is_bilateral": true,
     "side": null,
     "priority_tier": 2,
     "is_reps": true,
@@ -1393,7 +1393,7 @@
     "equipment_required": [
       "Miniband"
     ],
-    "is_bilateral": true,
+    "is_bilateral": false,
     "side": "left_leg",
     "priority_tier": 2,
     "is_reps": true,

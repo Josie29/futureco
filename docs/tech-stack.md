@@ -8,10 +8,11 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | Data | Query language | Cypher | The traversal *is* the deliverable — it must be readable and auditable by a reviewer |
 | Backend | Language | Python 3.12 | Where the graph, embedding, and Anthropic tooling all live |
 | Backend | Web framework | FastAPI | Pydantic-native typed contracts and generated OpenAPI, which is what "typed contracts" is being evaluated on |
-| Backend | Contracts | Pydantic v2 models shared by HTTP responses and agent tool schemas | One definition of a `WorkoutPlan` / `ProvenanceTrace` for both the API and the tool JSON schema |
+| Backend | Contracts | Pydantic v2 models shared by the domain, the HTTP responses and the model's output schema | One definition of a `Verdict` or an `EvidencePath`, whether it is being scored, serialised, or filled in by `messages.parse()` |
 | Backend | Packaging | uv + `pyproject.toml` + `uv.lock` | Drop-in pip replacement, locks transitive deps, and cuts the Docker layer build to seconds |
 | AI | LLM | `claude-opus-5` via the official `anthropic` SDK | Latest and most capable; drives planning and copilot synthesis, never the safety decision |
-| AI | Agent runtime | Anthropic SDK Tool Runner (`client.beta.messages.tool_runner`) with `@beta_tool` functions wrapping Cypher | Supplies the loop with no framework in between; per-turn hooks are the natural interception point for the provenance trace |
+| AI | Generator runtime | One `client.messages.parse()` call into a Pydantic schema, no framework | Extraction is the only model step, so there is no loop to orchestrate — see `decisions.md`, *Agent runtime* |
+| AI | Copilot runtime | Anthropic SDK Tool Runner (`client.beta.messages.tool_runner`) — **not yet built** | Open-ended retrieval over KG2 does need a loop; per-turn hooks are the natural interception point for the trace |
 | Frontend | Framework | Vite + React 19 + TypeScript | Every byte is served by the Python API, so SSR earns nothing; Vite is a static bundle behind nginx |
 | Frontend | Styling / components | Tailwind CSS v4 + shadcn/ui | Tailwind's 0.25rem scale and CSS-variable tokens match house rules; shadcn is copy-in source, not a runtime dependency |
 | Frontend | Charts | Recharts | Declarative React components for adherence/sleep/message-pattern series; the fastest path from data to a readable chart |
@@ -33,16 +34,16 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | Web framework | Litestar | Genuinely comparable on typing and speed; smaller ecosystem and no offsetting advantage here |
 | Web framework | Django / django-ninja | ORM, migrations, and admin for a system with no relational domain model |
 | Web framework | Flask | No typed request/response contracts or generated OpenAPI without bolting on the same libraries |
-| Contracts | dataclasses / attrs / TypedDict | No runtime validation and no JSON Schema export, so the agent tool definitions would be a second hand-maintained copy |
+| Contracts | dataclasses / attrs / TypedDict | No runtime validation and no JSON Schema export, so the model's output schema would be a second hand-maintained copy |
 | Packaging | Poetry | Slower resolution and heavier ceremony than uv for the same lockfile guarantee |
 | Packaging | pip-tools / bare `requirements.txt` | Weaker transitive locking and a noticeably slower image build |
 | LLM | `claude-haiku-4-5` for resolution or filtering | Both are deterministic graph work — introducing a model there is the failure mode the spec warns against |
-| LLM | Non-Anthropic provider | No reason to leave the SDK whose tool runner supplies the agent loop |
-| Agent runtime | LangGraph | State-machine abstraction whose learning surface would consume more of the day than the knowledge graph |
+| LLM | Non-Anthropic provider | No reason to leave the SDK that already supplies schema-validated structured output |
+| Agent runtime | LangGraph | A state machine for a straight line, and its learning surface would consume more of the day than the knowledge graph |
 | Agent runtime | LangChain `GraphCypherQAChain` | Generates Cypher with an LLM — the exact non-deterministic path the safety requirement forbids |
-| Agent runtime | Pydantic AI | Good typed fit, but the Anthropic SDK's tool runner already supplies the loop and hooks with one less layer |
+| Agent runtime | Pydantic AI | Typed output is already guaranteed by `messages.parse()` against a Pydantic model; the framework would add a layer over nothing |
 | Agent runtime | Claude Agent SDK | Packages the Claude Code harness — built-in filesystem and bash tools this product has no use for |
-| Agent runtime | Hand-written tool loop | The runner's per-turn hooks already provide the interception point; writing the loop adds risk without control |
+| Agent runtime | Hand-written tool loop | There is no loop: the generator makes exactly one model call, and the copilot will use the runner |
 | Frontend | Next.js | App Router SSR/RSC adds a Node server container and build complexity for a client that only calls a Python API |
 | Frontend | Create React App | Deprecated and unmaintained |
 | UI kit | Mantine / MUI | Theme system and bundle weight for roughly eight components |

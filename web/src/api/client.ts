@@ -1,6 +1,3 @@
-import { roster } from "@/api/fixtures"
-import { computeEligibility } from "@/api/mock/catalogue"
-import { buildPlan } from "@/api/mock/plans"
 import { getTraceById, listTraces, recordPlanRun } from "@/api/mock/traces"
 import { currentCoachId } from "@/features/auth/storage"
 import type {
@@ -20,10 +17,15 @@ import { ConstraintKind } from "@/types"
 /**
  * The API surface, one function per documented endpoint.
  *
- * The read surface is live against the Python API; the generator and the
- * traces tab are still mock-backed and belong to a separate stream. Which is
- * which is marked below. No component knows where its data comes from, which
- * is what lets the two halves land at different times.
+ * Everything a coach reads or asks for is live against the Python backend: the
+ * generator traverses the graph to build a plan, and the member panels and the
+ * copilot read KG2. Only the traces tab is still mock-backed, because only the
+ * copilot emits spans so far — a real list holding half the runs would be worse
+ * than the fixture it replaced. The split is per function and no component
+ * knows which side it is on.
+ *
+ * Vite proxies `/api` to the backend in development, and the container serves
+ * both from one origin, so these paths are relative either way.
  *
  * | Method | Path                                        | Backed by |
  * |--------|---------------------------------------------|-----------|
@@ -31,22 +33,17 @@ import { ConstraintKind } from "@/types"
  * | GET    | /api/members                                | API       |
  * | GET    | /api/members/{id}                           | API       |
  * | GET    | /api/members/{id}/messages                  | API       |
+ * | GET    | /api/members/{id}/eligibility?disabled=…    | API       |
+ * | POST   | /api/members/{id}/plans                     | API       |
+ * | POST   | /api/members/{id}/plans/{run_id}/adjust     | API       |
  * | GET    | /api/members/{id}/copilot                   | API       |
- * | GET    | /api/members/{id}/eligibility?disabled=…    | mock      |
- * | POST   | /api/members/{id}/plans                     | mock      |
- * | POST   | /api/members/{id}/plans/{run_id}/adjust     | mock      |
  * | POST   | /api/members/{id}/copilot                   | API       |
  * | GET    | /api/traces                                 | mock      |
  * | GET    | /api/traces/{run_id}                        | mock      |
  */
 
-/** Rough shape of the latencies the still-mocked endpoints will show. */
-const LATENCY = {
-  read: 180,
-  eligibility: 120,
-  plan: 1400,
-  copilot: 900,
-} as const
+/** Rough shape of the latency the still-mocked traces endpoints would show. */
+const LATENCY = { read: 180 } as const
 
 export class ApiError extends Error {
   constructor(
@@ -63,30 +60,52 @@ function delay<T>(value: T, ms: number): Promise<T> {
 }
 
 /**
- * GET a JSON endpoint, sending the signed-in coach.
+ * Call the backend as the signed-in coach.
  *
- * `X-Coach-Id` comes from the session rather than from any argument, so no
+ * `X-Coach-Id` comes from stored session rather than from any argument, so no
  * call site can pass an identity it was handed. The API answers 404 unless a
- * `coaches` edge joins that coach to the member being read.
+ * `coaches` edge joins that coach to the member being read — which is what
+ * makes the console's mock login an actual boundary.
  *
- * @param path Absolute API path. Same-origin: the dev server proxies `/api`.
- * @returns The decoded body.
- * @throws ApiError When signed out, or when the API answers non-2xx. The
- *   server's `detail` is preferred over a generic message, because the API
- *   already writes those for a person to read.
+ * FastAPI puts its message in `detail`; anything else — a proxy error page, a
+ * dead backend — has no JSON at all, so the status line is the only thing left
+ * to report. Either way a caller sees one error type.
+ *
+ * @param path Absolute path beginning `/api`.
+ * @param init Fetch options. Omit for a GET.
+ * @param anonymous Send no coach header. Only `/api/coaches` sets this — it is
+ *   the screen reached before there is a coach to send.
+ * @returns The parsed JSON body.
+ * @throws ApiError carrying the response status, or 0 when the API was
+ *   unreachable and 401 when nobody is signed in.
  */
-async function getJson<T>(path: string): Promise<T> {
-  const coachId = currentCoachId()
-  if (!coachId) throw new ApiError("Not signed in", 401)
-
-  const response = await fetch(path, { headers: { "X-Coach-Id": coachId } })
-  if (!response.ok) {
-    const problem = await response
-      .json()
-      .catch(() => ({ detail: `The API returned ${response.status}.` }))
-    throw new ApiError(problem.detail ?? `The API returned ${response.status}.`, response.status)
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  anonymous = false,
+): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (init?.body) headers["content-type"] = "application/json"
+  if (!anonymous) {
+    const coachId = currentCoachId()
+    if (!coachId) throw new ApiError("Not signed in", 401)
+    headers["X-Coach-Id"] = coachId
   }
-  return response.json()
+
+  let response: Response
+  try {
+    response = await fetch(path, { ...init, headers })
+  } catch {
+    throw new ApiError("Could not reach the API", 0)
+  }
+  if (!response.ok) {
+    const detail = await response
+      .json()
+      .then((body: { detail?: string }) => body.detail)
+      .catch(() => undefined)
+    throw new ApiError(detail ?? `Request failed (${response.status})`, response.status)
+  }
+  return response.json() as Promise<T>
 }
 
 /** Injury items are never honoured, whatever the client sends. */
@@ -94,29 +113,13 @@ function dropInjuries(disabled: string[]): string[] {
   return disabled.filter((id) => !id.startsWith(`${ConstraintKind.INJURIES}:`))
 }
 
-/**
- * Guard for the endpoints still served by the generator mock.
- *
- * The live endpoints do this server-side against the graph. This stays only as
- * long as the mock does, and goes with it.
- *
- * @throws ApiError 404 for an unknown member, or one carrying no context.
- */
-function requireMember(memberId: string): void {
-  const entry = roster.find((m) => m.id === memberId)
-  if (!entry) throw new ApiError(`No member ${memberId}`, 404)
-  if (!entry.has_context) throw new ApiError(`No context loaded for ${entry.name}`, 404)
-}
-
 /** The sign-in list. The one call made before there is a coach to send. */
 export async function getCoaches(): Promise<Coach[]> {
-  const response = await fetch("/api/coaches")
-  if (!response.ok) throw new ApiError("Couldn't load the coach list", response.status)
-  return response.json()
+  return request<Coach[]>("/api/coaches", undefined, true)
 }
 
 export async function getRoster(): Promise<RosterEntry[]> {
-  return getJson<RosterEntry[]>("/api/members")
+  return request<RosterEntry[]>("/api/members")
 }
 
 /**
@@ -127,7 +130,7 @@ export async function getRoster(): Promise<RosterEntry[]> {
  *   designed empty state for the second rather than fabricated clinical detail.
  */
 export async function getMember(memberId: string): Promise<MemberContext> {
-  return getJson<MemberContext>(`/api/members/${encodeURIComponent(memberId)}`)
+  return request<MemberContext>(`/api/members/${encodeURIComponent(memberId)}`)
 }
 
 /**
@@ -136,22 +139,25 @@ export async function getMember(memberId: string): Promise<MemberContext> {
  * `disabled` can never switch off an injury. The API loads injuries from the
  * member id and applies them unconditionally — there is no field the client
  * can send to turn them off, for the same reason the agent's tools don't
- * expose one.
+ * expose one. Stripped here too, so the rule holds on both sides.
  */
-export async function getEligibility(
-  memberId: string,
-  disabled: string[],
-): Promise<Eligibility> {
-  requireMember(memberId)
-  return delay(computeEligibility(dropInjuries(disabled)), LATENCY.eligibility)
+export async function getEligibility(memberId: string, disabled: string[]): Promise<Eligibility> {
+  const query = dropInjuries(disabled)
+    .map((id) => `disabled=${encodeURIComponent(id)}`)
+    .join("&")
+  return request<Eligibility>(
+    `/api/members/${encodeURIComponent(memberId)}/eligibility${query ? `?${query}` : ""}`,
+  )
 }
 
-export async function createPlan(memberId: string, request: PlanRequest): Promise<WorkoutPlan> {
-  requireMember(memberId)
-  if (!request.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = buildPlan({ ...request, disabled: dropInjuries(request.disabled) })
+export async function createPlan(memberId: string, body: PlanRequest): Promise<WorkoutPlan> {
+  if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
+  const plan = await request<WorkoutPlan>(`/api/members/${encodeURIComponent(memberId)}/plans`, {
+    method: "POST",
+    body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }),
+  })
   recordPlanRun(plan)
-  return delay(plan, LATENCY.plan)
+  return plan
 }
 
 /**
@@ -163,21 +169,19 @@ export async function createPlan(memberId: string, request: PlanRequest): Promis
 export async function adjustPlan(
   memberId: string,
   runId: string,
-  request: PlanRequest,
+  body: PlanRequest,
 ): Promise<WorkoutPlan> {
-  requireMember(memberId)
-  if (!request.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = buildPlan({
-    ...request,
-    disabled: dropInjuries(request.disabled),
-    parentRunId: runId,
-  })
+  if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
+  const plan = await request<WorkoutPlan>(
+    `/api/members/${encodeURIComponent(memberId)}/plans/${encodeURIComponent(runId)}/adjust`,
+    { method: "POST", body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }) },
+  )
   recordPlanRun(plan)
-  return delay(plan, LATENCY.plan)
+  return plan
 }
 
 export async function getMessages(memberId: string): Promise<MemberMessage[]> {
-  return getJson<MemberMessage[]>(`/api/members/${encodeURIComponent(memberId)}/messages`)
+  return request<MemberMessage[]>(`/api/members/${encodeURIComponent(memberId)}/messages`)
 }
 
 /**
@@ -187,14 +191,14 @@ export async function getMessages(memberId: string): Promise<MemberMessage[]> {
  * (ASSESSMENT.md:71), so retrieval has run before the coach types anything.
  */
 export async function getCopilotThread(memberId: string): Promise<CopilotMessage[]> {
-  return getJson<CopilotMessage[]>(`/api/members/${encodeURIComponent(memberId)}/copilot`)
+  return request<CopilotMessage[]>(`/api/members/${encodeURIComponent(memberId)}/copilot`)
 }
 
 /**
  * Ask about the loaded member.
  *
- * `id` is ignored — the server assigns the turn's id, because it also records
- * the run under it. Kept in the signature so the caller's optimistic
+ * The `id` argument is ignored — the server assigns the turn's id, because it
+ * records the run under it. Kept in the signature so a caller's optimistic
  * placeholder still has something to key on while the answer is in flight.
  */
 export async function askCopilot(
@@ -202,29 +206,12 @@ export async function askCopilot(
   prompt: string,
   _id: string,
 ): Promise<CopilotMessage> {
-  const coachId = currentCoachId()
-  if (!coachId) throw new ApiError("Not signed in", 401)
-
-  const response = await fetch(`/api/members/${encodeURIComponent(memberId)}/copilot`, {
+  return request<CopilotMessage>(`/api/members/${encodeURIComponent(memberId)}/copilot`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Coach-Id": coachId },
     body: JSON.stringify({ prompt }),
   })
-  if (!response.ok) {
-    const problem = await response
-      .json()
-      .catch(() => ({ detail: `The API returned ${response.status}.` }))
-    throw new ApiError(problem.detail ?? "The copilot didn't answer.", response.status)
-  }
-  return response.json()
 }
 
-/**
- * Observability over the agentic runtime (ASSESSMENT.md:134).
- *
- * Separate endpoints from the plan itself: a trace outlives the response it
- * describes, and the console shouldn't have to hold one to show the other.
- */
 export async function getTraces(): Promise<RunTraceSummary[]> {
   return delay(listTraces(), LATENCY.read)
 }
