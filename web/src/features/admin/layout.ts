@@ -45,8 +45,19 @@ const ROW_ORDER: NodeLabel[] = [
   NodeLabel.METRIC,
 ]
 
-export const CANVAS = { width: 860, height: 420 } as const
 export const BOX = { width: 168, height: 46 } as const
+
+export interface Canvas {
+  width: number
+  height: number
+}
+
+const CANVAS_WIDTH = 860
+const MIN_CANVAS_HEIGHT = 420
+const CANVAS_PADDING = 44
+
+/** Room for the band captions, which sit above the topmost row. */
+const CAPTION_BAND = 18
 
 // Band 1 is inset far enough that its outward bows and the `part_of` self-loop
 // stay inside the viewBox. At x=104 they routed to -42 and were clipped.
@@ -81,34 +92,73 @@ export interface PositionedEdge {
   clinical: boolean
 }
 
+/**
+ * Labels only KG2's builder authors. Mirrors `_KG2_AUTHORED` in
+ * `backend/src/api/semantics.py`, which places an edge the same way.
+ *
+ * This was `Member` and `Goal` alone, written when those were the only two
+ * node types KG2 owned. The longitudinal build-out added five more, and every
+ * one of them fell through to the KG1 column — so Sessions, Messages,
+ * Observations and Metrics were drawn under "Movement / clinical", which is
+ * both wrong and what overflowed that band.
+ */
+const KG2_AUTHORED = new Set<NodeLabel>([
+  NodeLabel.MEMBER,
+  NodeLabel.GOAL,
+  NodeLabel.COACH,
+  NodeLabel.SESSION,
+  NodeLabel.MESSAGE,
+  NodeLabel.OBSERVATION,
+  NodeLabel.METRIC,
+])
+
 function bandOf(node: NodeTypeSummary): Band {
   if (node.shared) return Band.SHARED
-  return node.label === NodeLabel.MEMBER || node.label === NodeLabel.GOAL
-    ? Band.KG2_ONLY
-    : Band.KG1_ONLY
+  return KG2_AUTHORED.has(node.label) ? Band.KG2_ONLY : Band.KG1_ONLY
 }
 
 /**
- * Place every node type present in the response.
+ * Place every node type present in the response, and size the canvas to hold them.
+ *
+ * The height is derived from the tallest band rather than fixed. It used to be
+ * a constant 420, which fitted while KG2 was three node types; at seven it
+ * needs 660 and the difference was rendered as boxes clipped off both ends of
+ * the viewBox. A layout that silently crops when the graph grows is worse than
+ * one that scrolls, so the canvas follows the content.
  *
  * @param nodeTypes Node types for the requested scope.
- * @returns One positioned node per type, keyed for lookup by label.
+ * @returns One positioned node per type keyed by label, and the canvas that
+ *   contains them.
  */
-export function layoutNodes(nodeTypes: NodeTypeSummary[]): Map<NodeLabel, PositionedNode> {
+export function layoutNodes(nodeTypes: NodeTypeSummary[]): {
+  nodes: Map<NodeLabel, PositionedNode>
+  canvas: Canvas
+} {
   const placed = new Map<NodeLabel, PositionedNode>()
   const rank = (label: NodeLabel) => {
     const index = ROW_ORDER.indexOf(label)
     return index === -1 ? ROW_ORDER.length : index
   }
 
-  for (const band of Object.values(Band)) {
-    const present = nodeTypes
+  const bands = Object.values(Band).map((band) => ({
+    band,
+    present: nodeTypes
       .filter((n) => bandOf(n) === band)
-      .sort((a, b) => rank(a.label) - rank(b.label))
+      .sort((a, b) => rank(a.label) - rank(b.label)),
+  }))
 
-    // Rows are evenly spaced and centred, so a band of two and a band of four
+  const tallest = Math.max(0, ...bands.map((b) => b.present.length))
+  const needed =
+    (Math.max(tallest, 1) - 1) * ROW_SPACING + BOX.height + CANVAS_PADDING * 2 + CAPTION_BAND
+  const canvas: Canvas = {
+    width: CANVAS_WIDTH,
+    height: Math.max(MIN_CANVAS_HEIGHT, needed),
+  }
+
+  for (const { band, present } of bands) {
+    // Rows are evenly spaced and centred, so a band of two and a band of seven
     // share a midline rather than both starting at the top.
-    const top = CANVAS.height / 2 - ((present.length - 1) * ROW_SPACING) / 2
+    const top = (canvas.height + CAPTION_BAND) / 2 - ((present.length - 1) * ROW_SPACING) / 2
 
     present.forEach((summary, row) => {
       placed.set(summary.label, {
@@ -123,7 +173,7 @@ export function layoutNodes(nodeTypes: NodeTypeSummary[]): Map<NodeLabel, Positi
     })
   }
 
-  return placed
+  return { nodes: placed, canvas }
 }
 
 /** A loop on the outward face of the box, for `part_of`'s self-reference. */

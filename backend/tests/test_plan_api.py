@@ -6,6 +6,8 @@ from agent.extract import ScriptedExtractor
 from api.errors import register_error_handlers
 from api.plan_models import FilterCause, VerdictLabel
 from api.routes import plans as plan_routes
+from api.runs import InMemoryPlanRunStore
+from api.traces import InMemoryTraceStore
 from graph.driver import open_driver
 from resolve.resolver import Resolver
 from resolve.vocabulary import Vocabulary
@@ -28,6 +30,12 @@ class _Runtime:
         self.resolver = resolver
         self.extractor = ScriptedExtractor()
         self.live_extraction = False
+        # The in-memory implementations, not stubs: refinement reads its parent
+        # back out of this store, so a fake that returned nothing would make
+        # every adjustment test pass against the bug they exist to catch.
+        self.traces = InMemoryTraceStore()
+        self.plan_runs = InMemoryPlanRunStore()
+        self.durable = False
 
 
 @pytest.fixture(scope="module")
@@ -64,9 +72,9 @@ def plan(client):
 class TestContract:
     """The shapes `web/src/types/index.ts` declares.
 
-    The console is built against that file and its client is mock-backed, so
-    nothing else holds these two in step. A field renamed here is a blank
-    panel there, with no error anywhere in between.
+    The console is built against that file and nothing generates one from the
+    other, so these assertions are the only thing holding the two in step. A
+    field renamed here is a blank panel there, with no error in between.
     """
 
     def test_the_payload_carries_every_declared_field(self, plan) -> None:
@@ -75,6 +83,7 @@ class TestContract:
             "run_id",
             "parent_run_id",
             "prompt",
+            "prompt_trail",
             "title",
             "day_label",
             "requested_minutes",
@@ -255,12 +264,65 @@ class TestDisabled:
 
         Guarding only `plans` would leave the adjust route as a way in, and it
         is the one a coach reaches for after seeing a plan they dislike.
+
+        Refines a real run rather than an invented id, so the request reaches
+        the constraint check instead of stopping at the unknown-parent 404 —
+        which would pass while proving nothing.
         """
+        first = client.post(f"/api/members/{MEMBER}/plans", json={"duration_min": 45}).json()
         response = client.post(
-            f"/api/members/{MEMBER}/plans/whatever/adjust",
+            f"/api/members/{MEMBER}/plans/{first['run_id']}/adjust",
             json={"duration_min": 45, "disabled": ["injury:inj_knee_left"]},
         )
         assert response.status_code == 422
+
+    def test_refining_an_unknown_run_is_a_404(self, client) -> None:
+        """A plan cannot be built on a request the server can no longer read.
+
+        Treating it as a fresh build would silently drop every constraint the
+        parent carried, which is the failure this whole path exists to avoid —
+        and it would look like a successful refinement.
+        """
+        response = client.post(
+            f"/api/members/{MEMBER}/plans/run_that_never_existed/adjust",
+            json={"prompt": "Exclude lunges.", "duration_min": 45},
+        )
+        assert response.status_code == 404
+
+    def test_an_adjustment_composes_onto_its_parent(self, client) -> None:
+        """Refining a plan must keep what the earlier utterances asked for.
+
+        The bug this pins: the adjust route rebuilt from the adjustment alone,
+        so "only dumbbells and a kettlebell" followed by "exclude lunges"
+        produced a session with the lunges gone *and the barbell back*. The
+        equipment limit was never withdrawn — a coach reading the second plan
+        would have programmed kit the member does not own.
+
+        Asserted through the eligible pool rather than the exercise list,
+        because the pool is what the constraint actually moves: dropping the
+        equipment limit widens it from single figures to most of the catalogue.
+        """
+        first = client.post(
+            f"/api/members/{MEMBER}/plans",
+            json={
+                "prompt": "She's only got dumbbells and a kettlebell at home today.",
+                "duration_min": 45,
+            },
+        ).json()
+        second = client.post(
+            f"/api/members/{MEMBER}/plans/{first['run_id']}/adjust",
+            json={"prompt": "Exclude deadlifts.", "duration_min": 45},
+        ).json()
+
+        # The parent's equipment limit still binds, and the child's exclusion
+        # is on top of it rather than instead of it.
+        assert second["trace"]["eligible"] <= first["trace"]["eligible"]
+        concepts = {row["concept_name"] for row in second["trace"]["resolved"]}
+        assert {"Dumbbell", "Kettlebell"} <= concepts, "the parent's equipment must survive"
+
+        # And the trail says so, so the sheet cannot claim the plan answers
+        # only to the last thing typed.
+        assert second["prompt_trail"] == [first["prompt"], second["prompt"]]
 
     def test_an_unknown_member_is_a_404(self, client) -> None:
         """Only Jordan has context. An empty plan would look like a thin one."""

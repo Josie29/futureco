@@ -160,6 +160,17 @@ class PlanPayload(BaseModel):
     run_id: str
     parent_run_id: str | None
     prompt: str
+    """This run's own utterance, not the accumulated trail."""
+
+    prompt_trail: list[str] = []
+    """Every utterance this plan was built from, oldest first, ending in
+    `prompt`.
+
+    A refinement composes onto its parent rather than replacing it, so the
+    session on screen answers to more than the last thing typed. Showing only
+    the last one made an adjusted plan look like it had forgotten the request
+    it was still honouring."""
+
     title: str
     day_label: str
     requested_minutes: int

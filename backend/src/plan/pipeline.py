@@ -3,6 +3,7 @@ from uuid import uuid4
 from neo4j import Session
 from pydantic import BaseModel, ConfigDict
 
+from graph.recording import RunRecorder
 from graph.schema import NodeLabel
 from resolve.resolver import Resolution, Resolver
 from safety.constraints import Composition, compose
@@ -106,6 +107,7 @@ def generate(
     emphasis: tuple[str, ...] = (),
     policy: Policy | None = None,
     parent_run_id: str | None = None,
+    recorder: RunRecorder | None = None,
 ) -> GeneratedPlan:
     """Build a session for one member under one request.
 
@@ -124,6 +126,10 @@ def generate(
         emphasis: Muscles the request asked to emphasise, unresolved.
         policy: Weights to apply. Defaults to `Policy()`.
         parent_run_id: The run this one adjusts, when it adjusts one.
+        recorder: Where to account for the run's stages and graph reads. A
+            local one is used when none is given, so the probe and the tests
+            call this exactly as they did — instrumentation is the caller's to
+            ask for, never a second code path.
 
     Returns:
         The session, its provenance, and every stand-in offered.
@@ -131,18 +137,35 @@ def generate(
     Raises:
         ValueError: If the member is not in the graph.
     """
-    composition = compose(
-        load_standing(session, member_id), to_directives(resolver, list(instructions))
-    )
-    result = run(session, composition, policy)
-    facts = movement_facts(session, member_id)
-    offered = substitutions(session, result, facts)
+    account = recorder or RunRecorder()
+    # Wrapped here rather than by the caller so every read below is accounted
+    # for by construction. A stage that reached the raw session would be work
+    # the trace could not see.
+    read = account.session(session)
 
-    focus = resolve_focus(resolver, emphasis)
+    with account.stage("load_standing"):
+        standing = load_standing(read, member_id)
+    with account.stage("resolve_directives"):
+        directives = to_directives(resolver, list(instructions))
+    with account.stage("compose"):
+        composition = compose(standing, directives)
+    with account.stage("filter"):
+        result = run(read, composition, policy)
+    with account.stage("movement_facts"):
+        facts = movement_facts(read, member_id)
+    with account.stage("substitute"):
+        offered = substitutions(read, result, facts)
+
+    with account.stage("resolve_focus"):
+        focus = resolve_focus(resolver, emphasis)
     muscles = frozenset(r.match.name for r in focus if r.match)
 
-    plan = pack(result, facts, minutes, muscles)
-    plan = plan.model_copy(update={"blocks": _with_substitutions(plan.blocks, offered)})
+    with account.stage("pack"):
+        plan = pack(result, facts, minutes, muscles)
+        plan = plan.model_copy(update={"blocks": _with_substitutions(plan.blocks, offered)})
+
+    with account.stage("fingerprint"):
+        provenance = trace(read, result)
 
     return GeneratedPlan(
         run_id=uuid4().hex,
@@ -150,7 +173,7 @@ def generate(
         member_id=member_id,
         requested_minutes=minutes,
         plan=plan,
-        trace=trace(session, result),
+        trace=provenance,
         substitutions=offered,
         focus=focus,
     )

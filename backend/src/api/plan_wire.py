@@ -213,6 +213,7 @@ def payload(
     title: str,
     day_label: str,
     unmapped: tuple[str, ...] = (),
+    prompt_trail: tuple[str, ...] = (),
 ) -> PlanPayload:
     """Project a generated plan onto the console's contract.
 
@@ -225,6 +226,9 @@ def payload(
         title: A name for the session.
         day_label: When it is for.
         unmapped: Phrases extraction heard but could not classify.
+        prompt_trail: Every utterance the plan was built from, oldest first.
+            Defaults to this run's prompt alone, which is what a fresh build's
+            trail is.
 
     Returns:
         The payload `web/src/api/client.ts` expects.
@@ -287,6 +291,7 @@ def payload(
         run_id=generated.run_id,
         parent_run_id=generated.parent_run_id,
         prompt=prompt,
+        prompt_trail=list(prompt_trail) or [prompt],
         title=title,
         day_label=day_label,
         requested_minutes=generated.requested_minutes,

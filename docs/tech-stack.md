@@ -12,16 +12,16 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | Backend | Packaging | uv + `pyproject.toml` + `uv.lock` | Drop-in pip replacement, locks transitive deps, and cuts the Docker layer build to seconds |
 | AI | LLM | `claude-opus-5` via the official `anthropic` SDK | Latest and most capable; drives planning and copilot synthesis, never the safety decision |
 | AI | Generator runtime | One `client.messages.parse()` call into a Pydantic schema, no framework | Extraction is the only model step, so there is no loop to orchestrate — see `decisions.md`, *Agent runtime* |
-| AI | Copilot runtime | Anthropic SDK Tool Runner (`client.beta.messages.tool_runner`) — **not yet built** | Open-ended retrieval over KG2 does need a loop; per-turn hooks are the natural interception point for the trace |
-| Frontend | Framework | Vite + React 19 + TypeScript | Every byte is served by the Python API, so SSR earns nothing; Vite is a static bundle behind nginx |
+| AI | Copilot runtime | Anthropic SDK Tool Runner (`client.beta.messages.tool_runner`) | Open-ended retrieval over KG2 does need a loop. Nine typed tools over constant Cypher — the model picks the tool, never writes the query |
+| Frontend | Framework | Vite + React 19 + TypeScript | Every byte is served by the Python API, so SSR earns nothing — the bundle is static files FastAPI hands out, with no second web server in the stack |
 | Frontend | Styling / components | Tailwind CSS v4 + shadcn/ui | Tailwind's 0.25rem scale and CSS-variable tokens match house rules; shadcn is copy-in source, not a runtime dependency |
 | Frontend | Charts | Recharts | Declarative React components for adherence/sleep/message-pattern series; the fastest path from data to a readable chart |
 | Resolver | Fuzzy pass | `rapidfuzz`, `token_set_ratio` | Canonical names are multi-word, so a coach's single word must score against the token it shares, not the whole string |
 | Resolver | Vector pass | `fastembed` (ONNX, all-MiniLM-L6-v2), cosine over an in-memory numpy matrix | 164 concepts is ~250 KB of vectors; an index would be lifecycle for nothing, and in-process keeps the resolver testable with no database |
 | Testing | Backend | `pytest`, cases driven from `data/authored/resolver_cases.json` | One file calibrates the thresholds and asserts them, so the two cannot drift |
-| Observability | Trace store | Local Postgres (official Docker image), one append-only table per run holding graph queries, LLM calls, and timings | Self-hosted and queryable with SQL — no vendor account, no fees, no free tier to expire |
-| Infra | Local run | Docker Compose — `neo4j`, then a one-shot `seed`, then `api`; `postgres` and `web` still to come | `docker compose up` is the one command; nothing to install, nothing to expire |
-| Infra | API image | Multi-stage `python:3.13-slim`, embedding weights baked at build time | Runtime needs no network; see `decisions.md`, *Packaging* |
+| Observability | Trace store | Local Postgres 17 (official Docker image), one append-only row per run holding spans, graph queries, LLM calls and timings | Self-hosted and queryable with SQL — no vendor account, no fees, no free tier to expire. Also holds `plan_runs`, the lineage an adjustment refines from |
+| Infra | Local run | Docker Compose — `neo4j` and `postgres`, a one-shot `seed`, then `api`, which serves the built console too | `docker compose up` is genuinely the one command; nothing to install, nothing to expire |
+| Infra | API image | Multi-stage `python:3.13-slim`, embedding weights baked at build time, console bundle built in a `node:22-alpine` stage | Runtime needs no network and no Node; see `decisions.md`, *Packaging* |
 
 ## Rejected alternatives
 
@@ -63,7 +63,7 @@ Selection criteria, in priority order: (1) the safety filter must be a determini
 | Local run | Devcontainer | Ties the one-command promise to a specific editor |
 | Local run | Hosted demo (Vercel + Railway/Aura) | Secrets to manage and a live dependency that rots between submission and review |
 
-## Open sub-decisions
+## Resolved sub-decisions
 
-- **Trace table schema** — one wide append-only row per event versus a run/event pair of tables, and whether the provenance trace is derived from it or stored separately. Resolve when the generation runtime is defined.
-- **Chart data shape** — whether the copilot returns chart series as a typed tool result the frontend renders, or as a spec the frontend interprets. Resolve when the copilot's tool set is defined.
+- **Trace table schema** — **one wide append-only row per run**, spans as `JSONB`. Spans are only ever written with their run and only ever read as a whole waterfall, so a run/event pair of tables would buy a join and cost the atomic write. The provenance trace stays separate and is *not* derived from it: `ProvenanceTrace` is the plan's own audit artifact and has to survive whether or not anything was traced.
+- **Chart data shape** — **a typed tool result the frontend renders.** The model returns a `kind` and, for a metric chart, a `metric_id`; `copilot/charts.py` reads the numbers from the graph. A model that could emit data points could emit a plausible trend that never happened, and a chart is the most credible thing on the page.

@@ -90,12 +90,18 @@ export default function Console() {
   // without a second source of truth for the whole session.
   const copilot = thread ?? copilotThread.data ?? []
 
+  // The builder always starts a fresh run, even when a plan is on screen. Its
+  // prompt is a whole request rather than a delta, so composing it onto the
+  // previous run would apply constraints the coach had just deleted from the
+  // box. Refinement is the adjust bar's job, and only its job.
   const build = useMutation({
-    mutationFn: (request: PlanRequest) =>
-      plan ? adjustPlan(memberId, plan.run_id, request) : createPlan(memberId, request),
+    mutationFn: (request: PlanRequest) => createPlan(memberId, request),
     onSuccess: setPlan,
   })
 
+  // An adjustment composes onto its parent server-side: the parent's
+  // instructions are loaded and this utterance's appended, so "only dumbbells"
+  // then "exclude lunges" keeps both.
   const rebuildFrom = useMutation({
     mutationFn: ({ runId, request }: { runId: string; request: PlanRequest }) =>
       adjustPlan(memberId, runId, request),

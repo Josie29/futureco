@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { Mark } from "@/components/Mark"
 import { Tag, equipmentLabel } from "@/components/Tag"
 import { orderReasons, renderPath } from "@/lib/provenance"
+import { formatMinutes } from "@/lib/utils"
 import {
   ConceptIntent,
   FilterCause,
@@ -158,7 +159,7 @@ function ExerciseRow({ exercise }: { exercise: PlanExercise }) {
           </span>
           <span className="block font-mono text-micro whitespace-nowrap text-faint">
             {exercise.rest_sec !== null && `${exercise.rest_sec}s rest · `}
-            {exercise.minutes} min
+            {formatMinutes(exercise.minutes)} min
           </span>
         </div>
       </div>
@@ -338,19 +339,27 @@ export function PlanSheet({
             </span>
           </h2>
           <span className="num text-lead whitespace-nowrap">
-            {plan.estimated_minutes}
+            {formatMinutes(plan.estimated_minutes)}
             <small className="text-micro font-medium text-dim"> / {plan.requested_minutes} min</small>{" "}
             {spare > 0 && (
               <span className="text-micro font-medium text-cobalt" style={{ fontStretch: "normal" }}>
-                {spare} spare
+                {formatMinutes(spare)} spare
               </span>
             )}
           </span>
         </div>
 
         <p className="mt-0.5 flex items-baseline gap-2 text-micro text-faint">
+          {/* The whole trail, not just the last utterance. A refinement
+              composes onto its parent, so the session is still answering to
+              everything above — showing only the newest made an adjusted plan
+              read as though it had dropped the original request. */}
           <span className="min-w-0 truncate">
-            {plan.parent_run_id && <span className="text-cobalt">Adjusted · </span>}“{plan.prompt}”
+            {(plan.prompt_trail?.length ? plan.prompt_trail : [plan.prompt]).map((step, i) => (
+              <span key={i}>
+                {i > 0 && <span className="text-cobalt"> → </span>}“{step}”
+              </span>
+            ))}
           </span>
           {/* The full traversal lives one click away rather than on this page.
               A coach never has to open it; anyone defending the plan can. */}
@@ -367,8 +376,8 @@ export function PlanSheet({
         <div
           className="mt-2 flex h-1 gap-0.5"
           role="img"
-          aria-label={BLOCK_ORDER.map((b) => `${BLOCK_LABEL[b]} ${blockMinutes(b)} minutes`)
-            .concat(`${spare} spare`)
+          aria-label={BLOCK_ORDER.map((b) => `${BLOCK_LABEL[b]} ${formatMinutes(blockMinutes(b))} minutes`)
+            .concat(`${formatMinutes(spare)} spare`)
             .join(", ")}
         >
           {BLOCK_ORDER.map((b) => (
@@ -397,7 +406,7 @@ export function PlanSheet({
           <div key={block}>
             <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-0.5">
               <h3 className="text-meta font-bold -tracking-[0.005em]">{BLOCK_LABEL[block]}</h3>
-              <span className="font-mono text-micro text-faint">{blockMinutes(block)} min</span>
+              <span className="font-mono text-micro text-faint">{formatMinutes(blockMinutes(block))} min</span>
             </div>
             <ul>
               {items.map((e) => (

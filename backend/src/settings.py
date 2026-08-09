@@ -17,7 +17,21 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "futureco-local"
 
+    database_url: str | None = None
+    """Postgres, holding run traces and the plan-run lineage an adjustment
+    refines from.
+
+    None falls back to bounded in-memory stores, which is what `uv run pytest`
+    and a bare `uvicorn` outside compose get. The consequence is scoped and
+    stated on `/health`: traces vanish on restart, and a plan older than the
+    ring cannot be refined. Compose always sets it."""
+
     data_dir: Path = Field(default=REPO_ROOT / "data")
+
+    console_dir: Path | None = None
+    """The built console, served by the API so `docker compose up` is one
+    command. The image sets it; local development leaves it None and runs Vite,
+    which proxies `/api` back here."""
 
     anthropic_api_key: str | None = None
     """Optional, and both model surfaces degrade rather than fail without it.

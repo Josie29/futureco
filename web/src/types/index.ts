@@ -449,8 +449,18 @@ export interface WorkoutPlan {
   run_id: string
   /** Set when this run adjusts an earlier one. Adjustments are new runs. */
   parent_run_id: string | null
-  /** The prompt that produced this run, echoed for the revision trail. */
+  /** This run's own utterance — the last thing the coach typed. */
   prompt: string
+  /**
+   * Every utterance this plan was built from, oldest first, ending in
+   * `prompt`.
+   *
+   * An adjustment composes onto its parent's instructions rather than
+   * replacing them, so a refined plan is still honouring what was asked three
+   * refinements ago. Rendering only `prompt` made it look like it had
+   * forgotten.
+   */
+  prompt_trail: string[]
   title: string
   day_label: string
   requested_minutes: number

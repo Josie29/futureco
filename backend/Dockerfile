@@ -8,8 +8,27 @@
 # Alpine is musl, finds no wheel, and falls back to compiling from source — so
 # the base stays glibc.
 ARG PYTHON_IMAGE=python:3.13-slim
+ARG NODE_IMAGE=node:22-alpine
 ARG EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ARG MODEL_CACHE_DIR=/opt/models
+
+
+# The console is a static bundle, so the API can serve it and `docker compose
+# up` is one command rather than one plus a second terminal on Vite. Node is
+# needed to build it and never to run it, which is the whole reason this is a
+# build stage and not a service.
+FROM ${NODE_IMAGE} AS console
+
+WORKDIR /web
+# Same split as the Python layer below: the lockfile alone decides the install,
+# so editing a component leaves the dependency layer cached.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+# `npm run build` is `tsc -b && vite build`, so a type error fails the image
+# rather than shipping a console that only breaks in the browser.
+RUN npm run build
 
 
 FROM ${PYTHON_IMAGE} AS deps
@@ -56,11 +75,13 @@ COPY --from=model --chown=app:app ${MODEL_CACHE_DIR} ${MODEL_CACHE_DIR}
 WORKDIR /app
 COPY --chown=app:app backend/src /app/backend/src
 COPY --chown=app:app data /app/data
+COPY --from=console --chown=app:app /web/dist /app/web/dist
 
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app/backend/src \
     PYTHONUNBUFFERED=1 \
-    MODEL_CACHE_DIR=${MODEL_CACHE_DIR}
+    MODEL_CACHE_DIR=${MODEL_CACHE_DIR} \
+    CONSOLE_DIR=/app/web/dist
 
 # The model name is written twice — once as a build argument above, once as a
 # constant in the source. Assert they agree, so a change to one that misses the

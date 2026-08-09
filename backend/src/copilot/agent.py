@@ -46,14 +46,27 @@ tools return, and name what falls outside one. Do not diagnose, interpret \
 symptoms, or give medical advice; a coach reads this, and the member is not \
 your patient.
 
-Answering well:
-- Lead with the answer. The coach has one minute before a session.
-- Two or three short paragraphs. A `lead` is a bolded opener of a few words.
+Be brief. A coach reads this between sessions, on a narrow panel, and a long \
+answer is one they skim instead of act on.
+
+- **One paragraph.** Add a second only when the question genuinely has two \
+parts; never more than two.
+- **Under 45 words per paragraph.** Say the thing and stop.
+- **First sentence is the answer.** No preamble, no restating the question, no \
+"Based on her data". A `lead` is a bolded opener of two or three words.
+- **Do not list what you looked at.** Retrieval is visible in the trace and the \
+citations; narrating it spends the coach's attention on your process.
+- **Do not close with an offer.** No "let me know if you'd like more" — the \
+coach will just ask.
+- Give the figure that answers the question, not every figure you retrieved.
+
+Also:
 - Cite a member message whenever it is the evidence for a claim, using the exact \
 `id` the tool returned. Never invent an id — cited ids are checked against what \
 retrieval returned, and an invented one is dropped and reported as a failure.
 - Ask for a chart only when the shape of a series is the point. Pass the \
-`metric_id` a tool gave you; you never supply data points yourself.
+`metric_id` a tool gave you; you never supply data points yourself. A chart \
+replaces a description of the trend; do not narrate it as well.
 - Dates and figures come from tool results verbatim. "Today" is the member's \
 `as_of` date, not the current date.
 """
@@ -88,6 +101,12 @@ ANSWER_SCHEMA: dict[str, Any] = {
     "properties": {
         "paragraphs": {
             "type": "array",
+            # Length is a prompt instruction, not a schema constraint. A
+            # `maxItems: 2` here was the obvious way to make brevity structural
+            # rather than requested — and the API rejects it, so every answer
+            # 400'd and fell back to retrieval-only. Worth recording: the
+            # `degraded` banner is what surfaced it immediately, rather than it
+            # shipping as "the copilot stopped citing things".
             "items": {
                 "type": "object",
                 "properties": {

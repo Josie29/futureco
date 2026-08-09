@@ -6,32 +6,34 @@ Full spec in [`ASSESSMENT.md`](./ASSESSMENT.md). Synthetic data only.
 
 ## Run it
 
-Two processes: the backend in Docker, the console on Vite. The console is **not** in `docker compose` yet, so it is a second terminal.
+One command.
 
 ```bash
-cp .env.example .env      # optional — every value has a working default
-
-docker compose up         # terminal 1 — Neo4j, seeds both graphs, serves the API
+docker compose up
 ```
 
-```bash
-cd web && npm install     # terminal 2 — first run only
-npm run dev               # console on http://localhost:5173
-```
+Then open **http://localhost:8000**.
 
-The backend builds its image, starts Neo4j, seeds both graphs (**224 nodes, 538 edges**), and serves the API. Nothing else to install and no network needed at runtime — the embedding model is baked into the image at build time.
+That starts Neo4j and Postgres, seeds both graphs (**224 nodes, 538 edges**), and serves the API *and the coach console* from one origin. The console is built inside the image, so there is no second terminal, no `npm install`, and no Node on your machine. Nothing needs the network at runtime — the embedding weights are baked in at build time.
 
 | Service | URL | Notes |
 |---|---|---|
-| Coach console | http://localhost:5173 | Vite proxies `/api` to the backend, so it is same-origin |
-| API | http://localhost:8000 | `/health`, `/api/resolve`, the member and copilot surfaces, and `/docs` |
+| Coach console | http://localhost:8000 | Served by the API, so same-origin by construction |
+| API | http://localhost:8000/docs | `/health`, `/api/resolve`, members, plans, copilot, traces |
 | Neo4j Browser | http://localhost:7474 | `neo4j` / `futureco-local` |
+| Postgres | `localhost:5432` | `futureco` / `futureco-local` — run traces and plan lineage |
 
-**Prerequisites:** Docker, and Node 20+ for the console. An `ANTHROPIC_API_KEY` is optional — see *Running without a key* below.
+**Prerequisites:** Docker. That is the whole list. An `ANTHROPIC_API_KEY` is optional — see *Running without a key*.
 
-If a port is already taken, set `API_PORT`, `NEO4J_HTTP_PORT` or `NEO4J_BOLT_PORT` in `.env`. Point the console at a moved API with `VITE_API_TARGET=http://localhost:8001 npm run dev`. The seed is idempotent, so `docker compose up` a second time converges rather than duplicating.
+```bash
+cp .env.example .env      # optional — every value has a working default
+```
 
-**What is live and what is not.** Everything a coach reads or asks for calls the backend: the builder's eligibility count, plan generation and refinement, the roster and member panels, and the copilot. Only the Traces tab still renders a fixture, because only the copilot emits spans so far. `web/src/api/client.ts` is where the split lives, one function per endpoint.
+If a port is taken, set `API_PORT`, `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT` or `POSTGRES_PORT` in `.env`. The seed is idempotent, so a second `docker compose up` converges rather than duplicating.
+
+**Working on the console?** `cd web && npm install && npm run dev` still gives you Vite with HMR on :5173, proxying `/api` to the backend. That path is for development only; the container needs neither.
+
+**Everything in the console is live.** The builder's eligibility count, plan generation and refinement, the roster and member panels, the copilot, and the Traces tab all call the backend. There is no mock layer — `web/src/api/mock/` was deleted along with the last fixture it served.
 
 Or drive it from the command line:
 
@@ -126,14 +128,39 @@ The caution is a clinician's sentence from `contraindications.json`, quoted, not
 
 A stand-in can only ever be a movement the filter already cleared, and must share the dropped one's *primary* pattern — so no substitution can route around a contraindication.
 
+**The refinement case** — the three scenarios from `ASSESSMENT.md:27-31` as one conversation, against the live extractor. Real output, one `curl` per step.
+
+```
+step 1  "She's only got dumbbells and a kettlebell at home today."
+        dumbbells  -> Dumbbell    [fuzzy]  focus
+        kettlebell -> Kettlebell  [exact]  focus
+        5 of 50 eligible
+
+step 2  "Her left knee is bothering her again."
+        left knee  -> knee        [exact]  protect   side=left
+        5 of 50 eligible          <- flagging down-ranks; it does not exclude
+
+step 3  "Exclude deadlifts."
+        deadlifts  -> declined at 0.40, threshold 0.90
+        5 of 50 eligible          <- the request changed nothing, and says so
+```
+
+Two things this shows that a single-shot example cannot.
+
+**Constraints accumulate.** By step 3 the plan is still built from the equipment limit set in step 1 — `Dumbbell` and `Kettlebell` are still in the resolved list, two refinements later. An adjustment loads its parent's structured instructions and appends its own; it does not rebuild from the last sentence. That was a real bug, and `docs/decisions.md` *Adjustment* records what it did.
+
+**A decline is reported, not absorbed.** No catalog movement is named "deadlift", so the phrase reaches 0.40 against a 0.90 threshold and the resolver refuses rather than guessing at `Barbell` — which it can reach at 0.523, five thousandths above a term that *must* resolve. The sheet names the phrase, the near-miss, the score and the threshold it missed. Nothing silently didn't happen.
+
 ## Tests
 
 The packing, prescription and policy tests are pure and need neither Docker nor a key; the traversal tests need Neo4j up.
 
 ```bash
 docker compose up -d neo4j
-cd backend && uv sync && uv run pytest
+cd backend && uv sync && uv run pytest      # 302 tests
 ```
+
+Traversal tests need Neo4j; the packing, prescription and policy tests are pure. No test needs Postgres — the stores fall back to bounded in-memory implementations when `DATABASE_URL` is unset, and the keyless copilot tests force that path with a fixture rather than reading whatever `.env` happens to hold.
 
 One test calls the real API and is deselected by default, since it costs money and needs a key. It asserts the live model produces the same `Instruction`s as the offline stand-in over the same labelled cases — which is what stops the stand-in becoming fiction.
 
@@ -154,18 +181,39 @@ uv run pytest -m live
 | `backend/src/plan/` | Section table, prescription, time solver, substitution, reasons |
 | `backend/src/agent/` | Prose to `Instruction[]` for the generator |
 | `backend/src/copilot/` | The copilot's typed retrieval tools, charts, citation check and agent loop |
-| `backend/src/api/` | FastAPI service and the console's wire contract |
+| `backend/src/api/` | FastAPI service, the console's wire contract, run tracing and the Postgres stores |
+| `backend/src/graph/recording.py` | Session wrapper and stage timer behind every generator trace |
 | `web/` | Coach console — Vite + React, built against `web/src/types/index.ts` |
 | `data/authored/` | Hand-authored anatomy, contraindications, aliases, metric bands, session-pattern mappings, coaches, and the resolver and extraction cases |
 
+## Observability
+
+Both surfaces record every run to Postgres, and the Traces tab reads them. Nothing on that screen is fabricated.
+
+A generator trace nests each graph read under the pipeline stage that issued it, because `RunRecorder` gives the stage timer and the session wrapper one clock — offsets are measured, not reconstructed from summed durations. Repeated reads fold into one row carrying a `calls` count, so `PATTERN_SIBLINGS` running forty times is one line rather than forty.
+
+The first trace off the rebuilt path made its own point:
+
+```
+agent   plan.generate           @    0.0 + 3483.2ms
+  llm     extract                 @    0.0 + 3437.5ms  claude-opus-5  in=1632 out=55
+  graph   load_standing           @ 3437.6 +    5.3ms
+  graph   filter                  @ 3443.8 +    9.9ms   50 rows judged
+  graph   substitute              @ 3458.0 +   15.0ms   calls=40
+  graph   fingerprint             @ 3473.6 +    9.4ms   calls=30
+```
+
+**3437 of 3483 ms is the single extraction call.** All 74 graph queries together cost under 45 ms, so the latency budget is the model and nothing else — which is worth knowing before optimising any Cypher.
+
 ## Status
 
-Built and tested end to end: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the coach copilot, the API container, and the coach console wired to all of it.
+Built and tested end to end: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the coach copilot, run tracing, the API container serving the console, and 302 backend tests.
 
-KG2 now holds the member's whole record — sessions, chat, biomarkers, labs and adherence — at three grains: traversed entities, leaf observations, and node properties. `docs/kg2-schema.md` records which block lands where and why.
+KG2 holds the member's whole record — sessions, chat, biomarkers, labs and adherence — at three grains: traversed entities, leaf observations, and node properties. `docs/kg2-schema.md` records which block lands where and why.
 
-Not built, in the order they matter:
+Known gaps, in the order they matter:
 
-- **The console in `docker compose`.** `ASSESSMENT.md:119` grades one command, and today it is two: the backend containerised, the console on Vite. Serving the built bundle from the API container would close it.
-- **Generator spans.** The copilot records every run — the Cypher each read ran, the tool loop, token counts — through a `TraceStore`. The generator does not yet, so the Traces tab still reads a fixture rather than a list holding only half the runs.
-- **The Postgres trace store** in `tech-stack.md`. `ProvenanceTrace` is already a serialisable object carrying the graph fingerprint, so persisting runs is a writer rather than a redesign.
+- **SKOS mappings.** `ASSESSMENT.md:56` asks for the catalog's taxonomy mapped onto ontology concepts with SKOS. SNOMED codes ground the 27 anatomy nodes and the one condition; muscles, movement patterns and equipment have no ontology mapping, and `aliases.json` is a `skos:altLabel` set that is not named as one.
+- **OPE and COPPER.** Used nowhere and rejected nowhere. The spec asks for reasoning on what to pull and what to leave out, and for three of five ontologies that reasoning is not written down.
+- **Streaming.** Answers render whole. The generator names its pipeline stages while working and the copilot shows a skeleton, so the wait is legible, but token-by-token streaming is the remaining upgrade.
+- **Retrieval and plan-quality evals.** `resolver_cases.json` (25 labelled) and `extraction_cases.json` (8, pinned against the live model) are real eval sets with a threshold sweep behind them. There is no equivalent for copilot retrieval relevance or plan quality.

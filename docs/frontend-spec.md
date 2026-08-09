@@ -58,6 +58,8 @@ Everything `ASSESSMENT.md` mandates, built to feel like a tool a coach would kee
 
 **M8 · Interactive adjustment** — the three scenarios at `:27-31`, all driven from the prompt, plus an adjust bar on the plan itself. **An adjustment is a new run with a parent pointer, never a mutation**, so the trace a coach acted on survives review.
 
+It also **composes onto its parent rather than replacing it**: the server loads the parent run's accumulated `Instruction`s and appends this utterance's, so *"only dumbbells"* → *"exclude lunges"* keeps both. The builder is the opposite — its prompt is a whole request, so pressing **Rebuild session** always starts a fresh run. That split is the difference between refining a plan and restating one, and the sheet prints the full prompt trail so which one happened is legible.
+
 **M9 · Copilot chat** — opens with the brief already answered. Seeds from `chat_history`; renders `attachments` as captioned placeholder tiles (the sample carries `type` and `caption` but **no URL**). Answers cite the member message they were drawn from, clickable through to the Messages tab. Ungrounded questions answer "I don't have that for Jordan" and name what the record does cover.
 
 **M10 · Quick-prompt palette** — four full questions rather than seven two-word chips, which read as a filter bar. Charts come back with the answer where a chart is the clearest form, so `Plot adherence trend` is folded into "How's her adherence trending?". `Show message pattern` and `Compare last 4 weeks` (`:42`) stay answerable by typing.
@@ -65,6 +67,8 @@ Everything `ASSESSMENT.md` mandates, built to feel like a tool a coach would kee
 **M11 · Charts** — adherence, sleep, message pattern, four-week comparison. Single series each, so no legend: cobalt is the series, red marks a point below target. Every chart ships a numbers table as the accessible view.
 
 **M13 · Traces** *(`:134`, nice-to-have)* — a run list, a span waterfall, and per-span detail: the Cypher a graph step ran, the model and token counts for an LLM call, and the reason a run degraded or failed. Span kinds are labelled rather than coloured — five nominal categories would need five colour-vision-safe hues, and this console spends its one saturated colour on the product and reserves red for status. Written for an engineer, which is why it shows the edge syntax the console hides.
+
+**Every row is a run that happened.** Both surfaces emit spans, the store is Postgres, and the offsets are measured rather than reconstructed — `RunRecorder` hands the pipeline's stages and its graph reads one clock, so a read renders under the stage that issued it.
 
 **M12 · States** — loading (skeletons shaped like the content), error, empty, and **degraded**. Degraded is the graded one (`:68`): a phrase that resolves to nothing above threshold is named on the sheet with its nearest match, the score, the threshold it missed, and what the system did instead.
 
@@ -132,7 +136,7 @@ Domain vernacular, not an icon library. Equipment reads `dumbbell` / `kettlebell
 
 ## API surface
 
-`prompt` is required and unconstrained; everything else is an optional hint. A request with nothing but a prompt is valid. Implemented in `web/src/api/client.ts`, mock-backed today — swapping the bodies for `fetch` is a change to that one file.
+`prompt` is required and unconstrained; everything else is an optional hint. A request with nothing but a prompt is valid. Implemented in `web/src/api/client.ts`, one function per endpoint, **every one of them live against the Python API**. There is no mock layer left in the console.
 
 | Method | Path | For |
 |---|---|---|
@@ -153,9 +157,10 @@ Domain vernacular, not an icon library. Equipment reads `dumbbell` / `kettlebell
 
 ## Tests
 
-`web/src/__tests__`, run with `npm test`. Two files, and only one of them tests shipped code:
+`web/src/__tests__`, run with `npm test`. One file, and it tests shipped code:
 
 - **`dates.test.ts`** — real frontend logic. Date-only strings must parse as local midnight; `new Date("2026-05-27")` is UTC and renders every date a day early west of Greenwich.
-- **`mock.test.ts`** — tests the **mock**, and says so. It guards one property: the numbers the console prints agree with each other, and every state the plan sheet can render stays reachable from some prompt.
 
-The two paths `ASSESSMENT.md:73` names — the concept resolver and the safety filter — are backend concerns and are tested there. Deliberately not stubbed here: a suite that passes against a stand-in implies coverage that doesn't exist. See [`mock-notes.md`](mock-notes.md).
+There was a second file, `mock.test.ts`, which tested the mock plan engine and said so. Both it and `web/src/api/mock/` are **deleted**: with every endpoint live there is nothing left to stand in for, and a suite asserting a stand-in's behaviour implies coverage that does not exist.
+
+The two paths `ASSESSMENT.md:73` names — the concept resolver and the safety filter — are backend concerns and are tested there.
