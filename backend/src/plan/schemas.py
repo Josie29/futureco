@@ -223,6 +223,11 @@ class Block(BaseModel):
     """Why this movement is here, safety first. Never empty for a scheduled
     block — `headline` is the one-line summary, this is what it summarises."""
 
+    muscles: tuple[str, ...] = ()
+    equipment: tuple[str, ...] = ()
+    goal_muscles: tuple[str, ...] = ()
+    """The subset of `muscles` some goal of the member's targets."""
+
 
 class ShortfallKind(StrEnum):
     """A way the plan is less than the request asked for."""

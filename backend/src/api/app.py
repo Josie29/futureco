@@ -7,6 +7,7 @@ from neo4j import Driver, Session
 
 from api.errors import register_error_handlers
 from api.routes import graph as graph_routes
+from api.routes import plans as plan_routes
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
 from graph.schema import NodeLabel
@@ -63,6 +64,7 @@ app.add_middleware(
 
 register_error_handlers(app)
 app.include_router(graph_routes.router, prefix="/api")
+app.include_router(plan_routes.router, prefix="/api")
 
 
 def runtime() -> Runtime:

@@ -106,9 +106,24 @@ def _fixed_blocks(
                 fit=verdict.fit,
                 headline=verdict.headline,
                 reasons=reasons_for(verdict, movement, role, focus),
+                **_catalog_fields(movement),
             )
         )
     return blocks
+
+
+def _catalog_fields(movement: MovementFacts) -> dict[str, tuple[str, ...]]:
+    """Catalog facts a block carries so the wire layer stays a projection.
+
+    Denormalised onto the block for the same reason `name` and `headline`
+    already are: a consumer rendering one movement should not have to hold the
+    whole catalog to do it.
+    """
+    return {
+        "muscles": movement.muscles,
+        "equipment": movement.equipment,
+        "goal_muscles": tuple(sorted({service.muscle for service in movement.goals})),
+    }
 
 
 def _cost(blocks: list[Block]) -> int:
@@ -271,6 +286,7 @@ def _main_block(
         headline=verdict.headline,
         anchored=anchor is not None and verdict.exercise_id == anchor.exercise_id,
         reasons=reasons_for(verdict, movement, role, focus),
+        **_catalog_fields(movement),
     )
 
 
