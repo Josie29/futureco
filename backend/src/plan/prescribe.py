@@ -84,7 +84,7 @@ def prescribe(facts: MovementFacts, role: FamilyRole, sets: int) -> Prescription
     plan = SECTION_PLANS[role.section]
     multiplier = 2 if facts.per_side else 1
 
-    if facts.is_held:
+    if not facts.is_reps:
         return Prescription(
             sets=sets,
             reps=None,

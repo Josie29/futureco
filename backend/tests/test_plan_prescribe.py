@@ -1,9 +1,5 @@
-import ast
-from pathlib import Path
-
 import pytest
 
-import plan.schemas
 from graph.build.catalog import load_exercises
 from plan.families import role_of
 from plan.prescribe import REP_RANGES, SECTION_PLANS, half_up, prescribe
@@ -24,7 +20,7 @@ def facts_for(exercise) -> MovementFacts:
         patterns=tuple(exercise.movement_patterns),
         rep_seconds=exercise.estimated_rep_seconds,
         is_reps=exercise.is_reps,
-        side=exercise.side,
+        is_bilateral=exercise.is_bilateral,
     )
 
 
@@ -56,25 +52,28 @@ class TestHolds:
     def test_every_non_rep_row_is_held(self, exercises) -> None:
         """A stretch must never be prescribed in reps.
 
-        Seven rows carry `0` seconds and eight are `is_reps: false`. Keying on
-        the zero alone divides by it for seven and prescribes nine reps of
-        `Kneeling Stability Ball Lat Stretch` for the eighth.
+        All eight `is_reps: false` rows. Counting any of them would divide a
+        work target by a zero cadence, and the ones that survived that would
+        read as "3 x 12 Cow Pose".
         """
         for exercise in exercises:
-            if exercise.is_reps and exercise.estimated_rep_seconds:
+            if exercise.is_reps:
                 continue
             dose = prescribe(facts_for(exercise), role_of(tuple(exercise.movement_patterns)), 2)
             assert dose.reps is None, exercise.name
             assert dose.hold_seconds, exercise.name
 
-    def test_the_disagreeing_row_is_read_as_a_hold(self, exercises) -> None:
-        """`Kneeling Stability Ball Lat Stretch` is 5.0 seconds and not counted.
+    def test_a_hold_takes_its_duration_from_the_section(self, exercises) -> None:
+        """A warmup hold is shorter than a cooldown one, and neither is a rep.
 
-        The one row where the two markers disagree. Trusting the cadence over
-        `is_reps` turns a stretch into a nine-rep set.
+        The catalog says an exercise is held but never for how long, so the
+        section table is the only source — and a stretch held for a main-block
+        forty seconds in the warmup is a different exercise.
         """
-        dose = prescribe(named(exercises, "Kneeling Stability Ball Lat Stretch"),
-                         role_of(("mobility - dynamic", "regen")), 2)
+        facts = named(exercises, "Kneeling Stability Ball Lat Stretch")
+        role = role_of(facts.patterns)
+        assert role.section is Section.WARMUP
+        dose = prescribe(facts, role, 2)
         assert dose.reps is None
         assert dose.hold_seconds == SECTION_PLANS[Section.WARMUP].hold_seconds
 
@@ -146,18 +145,12 @@ class TestTiming:
         """
         facts = named(exercises, "Dumbbell Goblet Split Squat")
         assert facts.per_side
-        one_side = facts.model_copy(update={"side": None})
+        both_sides = facts.model_copy(update={"is_bilateral": True})
         role = role_of(facts.patterns)
-        assert prescribe(facts, role, 2).work_seconds == 2 * prescribe(one_side, role, 2).work_seconds
-
-    def test_per_side_reads_side_not_is_bilateral(self, exercises) -> None:
-        """`is_bilateral` is inverted in this data — true on the single-side rows.
-
-        Reading it directly would time every unilateral exercise at half its
-        real cost and every bilateral one at double.
-        """
-        for exercise in exercises:
-            assert facts_for(exercise).per_side == (exercise.side is not None)
+        assert (
+            prescribe(facts, role, 2).work_seconds
+            == 2 * prescribe(both_sides, role, 2).work_seconds
+        )
 
     def test_rest_is_counted_after_every_set(self, exercises) -> None:
         """The final rest is the transition to the next exercise.
@@ -170,32 +163,31 @@ class TestTiming:
         assert dose.total_seconds == 3 * (dose.work_seconds + dose.rest_seconds)
 
 
-def references(tree: ast.AST, name: str) -> bool:
-    """Whether the parsed source reads `name` as a field, key or argument.
+class TestCatalogInvariants:
+    """What the prescription arithmetic assumes the data guarantees.
 
-    Parsed rather than grepped so the modules can explain in prose why they
-    avoid the field without tripping their own guard.
+    Both held after `decisions.md`, Data cleanup 6 corrected the source. The
+    planner reads each field once, with no derived property standing between
+    it and the meaning — which is only safe while these hold.
     """
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr == name:
-            return True
-        if (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.slice, ast.Constant)
-            and node.slice.value == name
-        ):
-            return True
-        if isinstance(node, ast.keyword) and node.arg == name:
-            return True
-    return False
 
+    def test_is_bilateral_agrees_with_side(self, exercises) -> None:
+        """A row claiming both sides must not also record one.
 
-def test_the_plan_package_never_reads_is_bilateral() -> None:
-    """The known-inverted field must not creep back in.
+        `is_bilateral` was shipped inverted, true on exactly the single-side
+        rows. Inverting again would halve the timing of every unilateral
+        movement and double every bilateral one, leaving a session total that
+        still looks plausible.
+        """
+        for exercise in exercises:
+            assert exercise.is_bilateral == (exercise.side is None), exercise.name
 
-    It reads like the right field, and using it would invert the timing of
-    every unilateral movement in the catalog — halving some blocks and
-    doubling others, with the session total still looking plausible.
-    """
-    for path in Path(plan.schemas.__file__).parent.glob("*.py"):
-        assert not references(ast.parse(path.read_text()), "is_bilateral"), path.name
+    def test_a_held_exercise_carries_no_cadence(self, exercises) -> None:
+        """`is_reps: false` and a zero cadence must mean the same thing.
+
+        They disagreed on one row. While they can, `prescribe` has to test
+        both or risk dividing by zero for seven exercises and prescribing
+        reps of a stretch for the eighth.
+        """
+        for exercise in exercises:
+            assert exercise.is_reps == bool(exercise.estimated_rep_seconds), exercise.name
