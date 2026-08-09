@@ -1,0 +1,121 @@
+{
+  "note": "SKOS Collections over the two taxonomies with no defensible external grounding. A collection is a labelled grouping that is not itself a concept in the scheme, which is exactly the case here: 'Free weights' is not equipment this catalogue stocks, and minting a node for it would fail the rule in decisions.md KG2 item 2 that a node earns its place by having a relationship to express. Members are exhaustive and disjoint per taxonomy, and a build asserts both.",
+  "MovementPattern": [
+    {
+      "label": "Upper-body push",
+      "members": ["upper push - horizontal", "upper push - vertical"]
+    },
+    {
+      "label": "Upper-body pull",
+      "members": ["upper pull - horizontal", "upper pull - vertical"]
+    },
+    {
+      "label": "Lower-body push",
+      "members": [
+        "lower push - calf raise",
+        "lower push - lunge",
+        "lower push - split squat",
+        "lower push - squat",
+        "lower push - step-up"
+      ]
+    },
+    {
+      "label": "Lower-body pull",
+      "members": ["lower pull - hip lift"]
+    },
+    {
+      "label": "Trunk and anti-movement",
+      "members": [
+        "core - anti-extension",
+        "core - anti-lateral flexion",
+        "core - anti-rotation",
+        "core - carry",
+        "core - extension",
+        "core - flexion",
+        "core - rotation"
+      ]
+    },
+    {
+      "label": "Conditioning",
+      "members": ["cardio", "cardio - locomotion", "cardio - plyometric"]
+    },
+    {
+      "label": "Isolation and accessory",
+      "members": [
+        "arms - accessory",
+        "legs - accessory",
+        "shoulders - accessory",
+        "lower - abduction",
+        "lower - adduction",
+        "upper - adduction"
+      ]
+    },
+    {
+      "label": "Mobility and joint preparation",
+      "members": ["mobility - dynamic", "mobility - static", "car", "yoga"]
+    },
+    {
+      "label": "Recovery and soft tissue",
+      "members": ["massage", "regen"]
+    },
+    {
+      "label": "Whole-body and positional qualities",
+      "members": ["balance", "isometric", "total body", "quadruped"]
+    }
+  ],
+  "Equipment": [
+    {
+      "label": "Free weights",
+      "members": [
+        "Barbell",
+        "Dumbbell",
+        "EZ Bar",
+        "Kettlebell",
+        "Medicine Ball",
+        "Plate",
+        "Sandbag"
+      ]
+    },
+    {
+      "label": "Resistance machines",
+      "members": [
+        "Cable Resistance Machine",
+        "Chest Supported Row Machine",
+        "Horizontal Leg Press Machine",
+        "Seated Lat Pulldown Machine"
+      ]
+    },
+    {
+      "label": "Conditioning tools",
+      "members": ["Jump Rope", "SkiErg", "Stair Climber"]
+    },
+    {
+      "label": "Benches, racks and fixed apparatus",
+      "members": [
+        "Adjustable Bench - Decline",
+        "Adjustable Bench - Incline",
+        "Flat Bench",
+        "Preacher Curl Bench",
+        "Pull-Up Bar",
+        "Rack"
+      ]
+    },
+    {
+      "label": "Elastic resistance",
+      "members": [
+        "Miniband",
+        "Resistance Band - Loop",
+        "Resistance Band - With Handles",
+        "Suspension Trainer"
+      ]
+    },
+    {
+      "label": "Support and surfaces",
+      "members": ["BOSU", "Box", "Slant Board", "Stability Ball", "Wall", "Yoga Mat"]
+    },
+    {
+      "label": "Attachments and small tools",
+      "members": ["Handle Attachment", "Lacrosse Ball"]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from graph.schema import AnatomicalTier, RelType
+from graph.skos import MatchType
 
 
 class Exercise(BaseModel):
@@ -77,6 +78,43 @@ def load_anatomy(path: Path) -> list[AnatomicalStructure]:
     rows = json.loads(path.read_text())
     return [AnatomicalStructure.model_validate(row) for row in rows]
 
+
+
+class Muscle(BaseModel):
+    """One row of `data/authored/muscles.json`.
+
+    The catalogue's 19 muscle groups, each mapped onto SNOMED CT. `match` is
+    authored rather than derived: only a person can say whether "glutes" and
+    gluteus maximus are the same concept or one inside the other, and that
+    judgement is the mapping.
+
+    `pin` marks a row whose code was chosen by hand because ranked search was
+    unstable for it — verified by lookup instead of re-derived per run.
+    """
+
+    name: str
+    match: MatchType
+    snomed_query: str
+    snomed_code: str
+    snomed_term: str
+    note: str
+    pin: bool = False
+
+
+def load_muscles(path: Path) -> list[Muscle]:
+    """Read and validate the authored muscle mappings.
+
+    Args:
+        path: Location of `muscles.json`.
+
+    Returns:
+        Every row, validated.
+
+    Raises:
+        FileNotFoundError: If the file is missing.
+        pydantic.ValidationError: If a row is malformed.
+    """
+    return [Muscle.model_validate(row) for row in json.loads(path.read_text())]
 
 
 class ContraindicationRule(BaseModel):

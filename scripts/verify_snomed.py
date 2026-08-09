@@ -7,7 +7,11 @@ from pathlib import Path
 EVS_BASE = "https://api-evsrest.nci.nih.gov/api/v1/concept/snomedct_us"
 AUTHORED_DIR = Path(__file__).resolve().parents[1] / "data" / "authored"
 # Every authored file whose rows carry a `snomed_query` to be grounded.
-SOURCES = (AUTHORED_DIR / "anatomy.json", AUTHORED_DIR / "contraindications.json")
+SOURCES = (
+    AUTHORED_DIR / "anatomy.json",
+    AUTHORED_DIR / "muscles.json",
+    AUTHORED_DIR / "contraindications.json",
+)
 
 
 def _search(term: str, match_type: str | None) -> tuple[str, str] | None:
@@ -19,6 +23,31 @@ def _search(term: str, match_type: str | None) -> tuple[str, str] | None:
     with urllib.request.urlopen(f"{EVS_BASE}/search?{query}", timeout=30) as response:
         concepts = json.load(response).get("concepts", [])
     return (concepts[0]["code"], concepts[0]["name"]) if concepts else None
+
+
+def fetch(code: str) -> tuple[str, str, str] | None:
+    """Look a SNOMED concept up by code, to confirm a pinned mapping still exists.
+
+    Stronger verification than a search: it asserts the exact concept an author
+    chose, rather than whatever ranks first for a phrase today.
+
+    Args:
+        code: A SNOMED CT concept id.
+
+    Returns:
+        `(code, preferred_term, "pinned")`, or None if the code is unknown.
+
+    Raises:
+        urllib.error.URLError: If EVS is unreachable.
+    """
+    try:
+        with urllib.request.urlopen(f"{EVS_BASE}/{code}", timeout=30) as response:
+            concept = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+    return (concept["code"], concept["name"], "pinned")
 
 
 def resolve(term: str) -> tuple[str, str, str] | None:
@@ -72,7 +101,13 @@ def main() -> int:
             # Rows are keyed by `name` in anatomy, `condition` in
             # contraindications; both are the human-readable label.
             label = row.get("name") or row["condition"]
-            match = resolve(row["snomed_query"])
+            # A pinned row names its own concept. Ranked search is fine for a
+            # term with one obvious answer and unreliable for one without: it
+            # put "core" on pectoralis major and moved "obliques" between the
+            # internal and external oblique on consecutive runs. Where an
+            # author has had to choose, the choice is recorded and verified
+            # rather than re-derived from whatever ranks first today.
+            match = fetch(row["snomed_code"]) if row.get("pin") else resolve(row["snomed_query"])
             if match is None:
                 unresolved.append(label)
                 row["snomed_code"] = row["snomed_term"] = None
