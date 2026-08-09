@@ -28,15 +28,75 @@ Try it:
 curl localhost:8000/health
 curl "localhost:8000/api/resolve?term=pecs"          # alias  -> chest
 curl "localhost:8000/api/resolve?term=deadlifts"     # declines, and says why
+
+curl -X POST localhost:8000/api/members/mbr_01HX9JORDAN/plans \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Her left knee is bothering her again.","duration_min":45}'
 ```
+
+## How a plan is built
+
+```
+prose ─[LLM]─▶ Instruction[] ─▶ resolve ─▶ compose ─▶ Composition
+                                                          │
+                                                   filter.run ── all 50 judged
+                                                          │
+                                         substitute ─▶ pack ─▶ WorkoutPlan
+                                                          │
+                                                    ProvenanceTrace
+```
+
+**One model call, at the very front.** Everything after the first arrow is Python and Cypher. The model turns a sentence into `Instruction` objects and never touches the graph — `safety.filter.run` takes a `Composition`, so there is no typed path from prose to a traversal, and a test walks the ASTs under `plan/` to keep it that way.
+
+That means the whole generator runs **without an API key**: hand it the instructions instead of a sentence and you get the same plan. It is the path the CLI probe below takes, and the worked examples are reproducible because of it.
+
+## Worked examples
+
+`plan.probe` is the generator with no model in it. Both examples below are its real output.
+
+```bash
+cd backend
+PYTHONPATH=src uv run python -m plan.probe --minutes 45 add:anatomy:"left knee"
+PYTHONPATH=src uv run python -m plan.probe --minutes 45 replace:equipment:dumbbells
+```
+
+**The injury case** — a coach flags the knee. All 17 eligible movements survive, because flagging a structure down-ranks rather than excludes: the graph knows an exercise loads the knee, not that doing so is harmful. 44m33s of 45 minutes scheduled.
+
+```
+MAIN
+  2 x 40s hold each side   Low Copenhagen Plank
+      flagged_structure  loads the knee
+      cleared            no contraindicated movement pattern reaches it
+  2 x 15                   Alternating Dumbbell Racked Crossback Lunge  <- anchored on a goal
+      caution            Loaded knee flexion with a long lever at the front knee.
+                         Tolerable at partial range, so a penalty rather than a hard exclusion.
+```
+
+The caution is a clinician's sentence from `contraindications.json`, quoted, not generated. The lunge is *anchored*: by rank alone this member's only goal-serving movements are also her only cautioned ones, so a short session would contain no lower-body work at all.
+
+**The limited-equipment case** — dumbbells only. 45 of 50 movements go, and the plan says so rather than presenting five as a full session: 24m32s of 45 minutes, a thin pool, an empty cooldown and four uncovered slots, each naming the equipment limit as its cause.
+
+```
+  1 x 12   Walking Toe Touches
+      substitution   stands in for World's Greatest Stretch, which shares
+                     mobility - dynamic and needs equipment that is not available
+```
+
+A stand-in can only ever be a movement the filter already cleared, and must share the dropped one's *primary* pattern — so no substitution can route around a contraindication.
 
 ## Tests
 
-The scoring, resolver and policy tests are pure and need neither Docker nor a key; the traversal tests need Neo4j up.
+The packing, prescription and policy tests are pure and need neither Docker nor a key; the traversal tests need Neo4j up.
 
 ```bash
 docker compose up -d neo4j
 cd backend && uv sync && uv run pytest
+```
+
+One test calls the real API and is deselected by default, since it costs money and needs a key. It asserts the live model produces the same `Instruction`s as the offline stand-in over the same labelled cases — which is what stops the stand-in becoming fiction.
+
+```bash
+uv run pytest -m live
 ```
 
 ## Repo map
@@ -49,9 +109,14 @@ cd backend && uv sync && uv run pytest
 | `backend/src/graph/` | Schema enums and the Cypher build layer |
 | `backend/src/resolve/` | Three-pass concept resolver: exact/alias, fuzzy, embedding |
 | `backend/src/safety/` | The deterministic filter, its policy weights, and provenance |
-| `backend/src/api/` | FastAPI service |
-| `data/authored/` | Hand-authored anatomy, contraindications, aliases, resolver cases |
+| `backend/src/plan/` | Section table, prescription, time solver, substitution, reasons |
+| `backend/src/agent/` | The only place `anthropic` is imported |
+| `backend/src/api/` | FastAPI service and the console's wire contract |
+| `web/` | Coach console — Vite + React, built against `web/src/types/index.ts` |
+| `data/authored/` | Hand-authored anatomy, contraindications, aliases, and the resolver and extraction cases |
 
 ## Status
 
-The knowledge graphs, concept resolver, safety filter and API container are built and tested. The agentic workout generator and the member-context copilot are not yet implemented; the architecture write-up, worked examples and trade-offs land with them.
+Built and tested: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the API container, and the coach console.
+
+Not built: the member-context copilot, which is where a real agent loop belongs — open-ended retrieval over KG2 needs one, and the generator does not. The console renders against a mock for that surface. The Postgres trace store in `tech-stack.md` is also still to come; `ProvenanceTrace` is already a serialisable object carrying the graph fingerprint, so persisting runs is a writer, not a redesign.
