@@ -127,6 +127,61 @@ def create_plan(
     )
 
 
+@router.post(
+    "/members/{member_id}/plans/{run_id}/adjust",
+    summary="Refine a session into a new run",
+    response_model=PlanPayload,
+)
+def adjust_plan(
+    member_id: str, run_id: str, body: PlanRequest, session: GraphSession, request: Request
+) -> PlanPayload:
+    """Build a new session that supersedes an earlier one.
+
+    An adjustment is a new run carrying a pointer to its parent, never a
+    mutation: the trace a coach already acted on stays intact and auditable.
+    That also means the request carries its own full state — the prompt, the
+    window and the switched-off items — so nothing here has to recall what the
+    parent asked for, and no run store is needed to refine a plan.
+
+    Args:
+        member_id: Whose chart to build from.
+        run_id: The run being refined, recorded as this one's parent.
+        body: The full request, not a delta.
+        session: An open Neo4j session.
+        request: The active request, carrying the warmed resolver.
+
+    Returns:
+        A new session, with `parent_run_id` set.
+
+    Raises:
+        HTTPException: 404 if the member is not in the graph; 422 if a
+            `disabled` id names something that cannot be switched off.
+    """
+    runtime = request.app.state.runtime
+    heard = _extract(runtime.extractor, body.prompt)
+
+    try:
+        generated = generate(
+            session,
+            runtime.resolver,
+            member_id,
+            body.duration_min,
+            to_instructions(body.disabled) + tuple(heard.instructions),
+            tuple(heard.emphasis),
+            parent_run_id=run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    return payload(
+        generated,
+        body.prompt,
+        _title(body.duration_min),
+        "Today",
+        unmapped=tuple(heard.unmapped),
+    )
+
+
 @router.get(
     "/members/{member_id}/eligibility",
     summary="How many movements this member may do",

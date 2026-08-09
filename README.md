@@ -6,23 +6,34 @@ Full spec in [`ASSESSMENT.md`](./ASSESSMENT.md). Synthetic data only.
 
 ## Run it
 
+Two processes: the backend in Docker, the console on Vite. The console is **not** in `docker compose` yet, so it is a second terminal.
+
 ```bash
 cp .env.example .env      # optional — every value has a working default
-docker compose up
+
+docker compose up         # terminal 1 — Neo4j, seeds both graphs, serves the API
 ```
 
-That builds the image, starts Neo4j, seeds both graphs (**170 nodes, 454 edges**), and serves the API. Nothing else to install and no network needed at runtime — the embedding model is baked into the image at build time.
+```bash
+cd web && npm install     # terminal 2 — first run only
+npm run dev               # console on http://localhost:5173
+```
+
+The backend builds its image, starts Neo4j, seeds both graphs (**170 nodes, 454 edges**), and serves the API. Nothing else to install and no network needed at runtime — the embedding model is baked into the image at build time.
 
 | Service | URL | Notes |
 |---|---|---|
-| API | http://localhost:8000 | `/health`, `/api/resolve`, and `/docs` for the OpenAPI browser |
+| Coach console | http://localhost:5173 | Vite proxies `/api` to the backend, so it is same-origin |
+| API | http://localhost:8000 | `/health`, `/docs` for the OpenAPI browser |
 | Neo4j Browser | http://localhost:7474 | `neo4j` / `futureco-local` |
 
-**Prerequisites:** Docker. An `ANTHROPIC_API_KEY` is optional — everything above is deterministic and runs without one.
+**Prerequisites:** Docker, and Node 20+ for the console. An `ANTHROPIC_API_KEY` is optional — see *Running without a key* below.
 
-If a port is already taken, set `API_PORT`, `NEO4J_HTTP_PORT` or `NEO4J_BOLT_PORT` in `.env`. The seed is idempotent, so `docker compose up` a second time converges rather than duplicating.
+If a port is already taken, set `API_PORT`, `NEO4J_HTTP_PORT` or `NEO4J_BOLT_PORT` in `.env`. Point the console at a moved API with `VITE_API_TARGET=http://localhost:8001 npm run dev`. The seed is idempotent, so `docker compose up` a second time converges rather than duplicating.
 
-Try it:
+**What is live and what is not.** The workout generator is real end to end: the builder's eligibility count, plan generation and refinement all call the backend and traverse the graph. The copilot, the roster and the member panels still render fixtures, because those endpoints are not built. `web/src/api/client.ts` is where the split lives, one function per endpoint.
+
+Or drive it from the command line:
 
 ```bash
 curl localhost:8000/health
@@ -32,6 +43,16 @@ curl "localhost:8000/api/resolve?term=deadlifts"     # declines, and says why
 curl -X POST localhost:8000/api/members/mbr_01HX9JORDAN/plans \
   -H 'content-type: application/json' \
   -d '{"prompt":"Her left knee is bothering her again.","duration_min":45}'
+```
+
+## Running without a key
+
+Set no `ANTHROPIC_API_KEY` and the backend swaps a scripted extractor in — `/health` reports which is in use. This is not a degraded mode. Extraction is the *entire* model surface, so the plans are identical; they just have to be asked for as instructions rather than as a sentence:
+
+```bash
+curl -X POST localhost:8000/api/members/mbr_01HX9JORDAN/plans \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"","duration_min":45,"disabled":["equipment:Yoga Mat"]}'
 ```
 
 ## How a plan is built
@@ -117,6 +138,10 @@ uv run pytest -m live
 
 ## Status
 
-Built and tested: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the API container, and the coach console.
+Built and tested: both knowledge graphs, the concept resolver, the safety filter, the workout generator, the extraction agent, the API container, the coach console, and the console's generator surface wired to the real backend.
 
-Not built: the member-context copilot, which is where a real agent loop belongs — open-ended retrieval over KG2 needs one, and the generator does not. The console renders against a mock for that surface. The Postgres trace store in `tech-stack.md` is also still to come; `ProvenanceTrace` is already a serialisable object carrying the graph fingerprint, so persisting runs is a writer, not a redesign.
+Not built, in the order they matter:
+
+- **The member-context copilot.** Where a real agent loop belongs — open-ended retrieval over KG2 needs one, and the generator does not. The console renders fixtures for it.
+- **The console in `docker compose`.** `ASSESSMENT.md:119` grades one command, and today it is two: the backend containerised, the console on Vite. Serving the built bundle from the API container would close it.
+- **The Postgres trace store** in `tech-stack.md`. `ProvenanceTrace` is already a serialisable object carrying the graph fingerprint, so persisting runs is a writer rather than a redesign; the Traces tab reads from an in-memory store today.

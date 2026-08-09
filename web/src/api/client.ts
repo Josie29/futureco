@@ -1,6 +1,4 @@
 import { coaches, member, memberMessages, roster } from "@/api/fixtures"
-import { computeEligibility } from "@/api/mock/catalogue"
-import { buildPlan } from "@/api/mock/plans"
 import { answer, openingBrief } from "@/api/mock/copilot"
 import { getTraceById, listTraces, recordCopilotRun, recordPlanRun } from "@/api/mock/traces"
 import type {
@@ -20,9 +18,14 @@ import { ConstraintKind } from "@/types"
 /**
  * The API surface, one function per documented endpoint.
  *
- * Every call is async and can fail, because the real ones will be. The bodies
- * are mock-backed today; swapping them for `fetch` is a change to this file
- * and nothing else — no component knows where its data comes from.
+ * The generator is live: eligibility, plans and adjustments call the Python
+ * backend, which builds them by traversing the knowledge graph. Everything
+ * else is still mock-backed, because those endpoints do not exist yet — the
+ * copilot in particular is unbuilt. The split is per function and no component
+ * knows which side it is on.
+ *
+ * Vite proxies `/api` to the backend in development, and the container serves
+ * both from one origin, so these paths are relative either way.
  *
  * | Method | Path                                        |
  * |--------|---------------------------------------------|
@@ -38,11 +41,9 @@ import { ConstraintKind } from "@/types"
  * | GET    | /api/traces/{run_id}                        |
  */
 
-/** Rough shape of the latencies the real endpoints will show. */
+/** Rough shape of the latencies the mocked endpoints would show. */
 const LATENCY = {
   read: 180,
-  eligibility: 120,
-  plan: 1400,
   copilot: 900,
 } as const
 
@@ -58,6 +59,38 @@ export class ApiError extends Error {
 
 function delay<T>(value: T, ms: number): Promise<T> {
   return new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
+}
+
+/**
+ * Call the backend, turning a failure into the same `ApiError` the mocks throw.
+ *
+ * FastAPI puts its message in `detail`; anything else — a proxy error page, a
+ * dead backend — has no JSON at all, so the status line is the only thing left
+ * to report. Either way a caller sees one error type.
+ *
+ * @param path Absolute path beginning `/api`.
+ * @param init Fetch options. Omit for a GET.
+ * @returns The parsed JSON body.
+ * @throws ApiError carrying the response status.
+ */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: init?.body ? { "content-type": "application/json" } : undefined,
+    })
+  } catch {
+    throw new ApiError("Could not reach the API", 0)
+  }
+  if (!response.ok) {
+    const detail = await response
+      .json()
+      .then((body: { detail?: string }) => body.detail)
+      .catch(() => undefined)
+    throw new ApiError(detail ?? `Request failed (${response.status})`, response.status)
+  }
+  return response.json() as Promise<T>
 }
 
 /**
@@ -108,16 +141,22 @@ export async function getEligibility(
   memberId: string,
   disabled: string[],
 ): Promise<Eligibility> {
-  requireMember(memberId)
-  return delay(computeEligibility(dropInjuries(disabled)), LATENCY.eligibility)
+  const query = dropInjuries(disabled)
+    .map((id) => `disabled=${encodeURIComponent(id)}`)
+    .join("&")
+  return request<Eligibility>(
+    `/api/members/${encodeURIComponent(memberId)}/eligibility${query ? `?${query}` : ""}`,
+  )
 }
 
-export async function createPlan(memberId: string, request: PlanRequest): Promise<WorkoutPlan> {
-  requireMember(memberId)
-  if (!request.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = buildPlan({ ...request, disabled: dropInjuries(request.disabled) })
+export async function createPlan(memberId: string, body: PlanRequest): Promise<WorkoutPlan> {
+  if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
+  const plan = await request<WorkoutPlan>(
+    `/api/members/${encodeURIComponent(memberId)}/plans`,
+    { method: "POST", body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }) },
+  )
   recordPlanRun(plan)
-  return delay(plan, LATENCY.plan)
+  return plan
 }
 
 /**
@@ -129,17 +168,15 @@ export async function createPlan(memberId: string, request: PlanRequest): Promis
 export async function adjustPlan(
   memberId: string,
   runId: string,
-  request: PlanRequest,
+  body: PlanRequest,
 ): Promise<WorkoutPlan> {
-  requireMember(memberId)
-  if (!request.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = buildPlan({
-    ...request,
-    disabled: dropInjuries(request.disabled),
-    parentRunId: runId,
-  })
+  if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
+  const plan = await request<WorkoutPlan>(
+    `/api/members/${encodeURIComponent(memberId)}/plans/${encodeURIComponent(runId)}/adjust`,
+    { method: "POST", body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }) },
+  )
   recordPlanRun(plan)
-  return delay(plan, LATENCY.plan)
+  return plan
 }
 
 export async function getMessages(memberId: string): Promise<MemberMessage[]> {

@@ -1,6 +1,7 @@
 from api.plan_models import (
     CAUSE_OF,
     ConceptIntent,
+    FilterCause,
     Eligibility,
     FilteredExercise,
     MuscleTag,
@@ -194,16 +195,16 @@ def _stages(result: FilterResult, prescribed: int) -> list[TraceStage]:
 
 
 def eligibility(attribution: Attribution, total: int) -> Eligibility:
-    """The builder's live count, from the filter's own arithmetic."""
-    return Eligibility(
-        total=total,
-        available=attribution.kept,
-        excluded_by={
-            CAUSE_OF[kind]: attribution.attributed[kind.value]
-            for kind in ATTRIBUTION_ORDER
-            if kind.value in attribution.attributed
-        },
-    )
+    """The builder's live count, from the filter's own arithmetic.
+
+    Every cause is emitted, including the ones at zero: the console declares
+    `Record<FilterCause, number>`, so a missing key reads as undefined where a
+    zero is meant.
+    """
+    counts = {cause: 0 for cause in FilterCause}
+    for kind in ATTRIBUTION_ORDER:
+        counts[CAUSE_OF[kind]] += attribution.attributed.get(kind.value, 0)
+    return Eligibility(total=total, available=attribution.kept, excluded_by=counts)
 
 
 def payload(

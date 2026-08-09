@@ -235,6 +235,33 @@ class TestDisabled:
         assert resolved[0]["intent"] == "exclude"
         assert resolved[0]["pass"] == "exact"
 
+    def test_an_adjustment_is_a_new_run_pointing_at_its_parent(self, client) -> None:
+        """Refining a plan must not overwrite the one a coach already acted on.
+
+        The trace is the record of a decision. Mutating a run in place would
+        rewrite the justification for advice that has already been given.
+        """
+        first = client.post(f"/api/members/{MEMBER}/plans", json={"duration_min": 45}).json()
+        second = client.post(
+            f"/api/members/{MEMBER}/plans/{first['run_id']}/adjust",
+            json={"duration_min": 45, "disabled": ["equipment:Yoga Mat"]},
+        ).json()
+        assert second["parent_run_id"] == first["run_id"]
+        assert second["run_id"] != first["run_id"]
+        assert second["exercises"] != first["exercises"]
+
+    def test_an_adjustment_cannot_waive_the_injury_either(self, client) -> None:
+        """The refinement path is a second door onto the same filter.
+
+        Guarding only `plans` would leave the adjust route as a way in, and it
+        is the one a coach reaches for after seeing a plan they dislike.
+        """
+        response = client.post(
+            f"/api/members/{MEMBER}/plans/whatever/adjust",
+            json={"duration_min": 45, "disabled": ["injury:inj_knee_left"]},
+        )
+        assert response.status_code == 422
+
     def test_an_unknown_member_is_a_404(self, client) -> None:
         """Only Jordan has context. An empty plan would look like a thin one."""
         response = client.post("/api/members/nobody/plans", json={"duration_min": 50})
@@ -251,6 +278,9 @@ def test_eligibility_matches_the_plans_own_trace(client, plan) -> None:
     assert counts["total"] == plan["trace"]["catalogue_total"]
     assert counts["available"] == plan["trace"]["eligible"]
     assert sum(counts["excluded_by"].values()) == len(plan["trace"]["filtered"])
+    # The console declares Record<FilterCause, number>, so every key is present
+    # and a cause that removed nothing reads as zero rather than as undefined.
+    assert set(counts["excluded_by"]) == {cause.value for cause in FilterCause}
 
 
 def test_a_plan_needs_no_prompt_and_no_api_key(client) -> None:
