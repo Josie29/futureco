@@ -1,4 +1,3 @@
-import { getTraceById, listTraces, recordPlanRun } from "@/api/mock/traces"
 import { currentCoachId } from "@/features/auth/storage"
 import type {
   Coach,
@@ -17,33 +16,28 @@ import { ConstraintKind } from "@/types"
 /**
  * The API surface, one function per documented endpoint.
  *
- * Everything a coach reads or asks for is live against the Python backend: the
- * generator traverses the graph to build a plan, and the member panels and the
- * copilot read KG2. Only the traces tab is still mock-backed, because only the
- * copilot emits spans so far — a real list holding half the runs would be worse
- * than the fixture it replaced. The split is per function and no component
- * knows which side it is on.
+ * Every function here calls the Python backend. Nothing in the console is
+ * mock-backed any more: the generator traverses the graph, the member panels
+ * and copilot read KG2, and the traces tab reads runs both surfaces actually
+ * recorded.
  *
  * Vite proxies `/api` to the backend in development, and the container serves
  * both from one origin, so these paths are relative either way.
  *
- * | Method | Path                                        | Backed by |
- * |--------|---------------------------------------------|-----------|
- * | GET    | /api/coaches                                | API       |
- * | GET    | /api/members                                | API       |
- * | GET    | /api/members/{id}                           | API       |
- * | GET    | /api/members/{id}/messages                  | API       |
- * | GET    | /api/members/{id}/eligibility?disabled=…    | API       |
- * | POST   | /api/members/{id}/plans                     | API       |
- * | POST   | /api/members/{id}/plans/{run_id}/adjust     | API       |
- * | GET    | /api/members/{id}/copilot                   | API       |
- * | POST   | /api/members/{id}/copilot                   | API       |
- * | GET    | /api/traces                                 | mock      |
- * | GET    | /api/traces/{run_id}                        | mock      |
+ * | Method | Path                                     |
+ * |--------|------------------------------------------|
+ * | GET    | /api/coaches                             |
+ * | GET    | /api/members                             |
+ * | GET    | /api/members/{id}                        |
+ * | GET    | /api/members/{id}/messages               |
+ * | GET    | /api/members/{id}/eligibility?disabled=… |
+ * | POST   | /api/members/{id}/plans                  |
+ * | POST   | /api/members/{id}/plans/{run_id}/adjust  |
+ * | GET    | /api/members/{id}/copilot                |
+ * | POST   | /api/members/{id}/copilot                |
+ * | GET    | /api/traces                              |
+ * | GET    | /api/traces/{run_id}                     |
  */
-
-/** Rough shape of the latency the still-mocked traces endpoints would show. */
-const LATENCY = { read: 180 } as const
 
 export class ApiError extends Error {
   constructor(
@@ -53,10 +47,6 @@ export class ApiError extends Error {
     super(message)
     this.name = "ApiError"
   }
-}
-
-function delay<T>(value: T, ms: number): Promise<T> {
-  return new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
 }
 
 /**
@@ -152,12 +142,10 @@ export async function getEligibility(memberId: string, disabled: string[]): Prom
 
 export async function createPlan(memberId: string, body: PlanRequest): Promise<WorkoutPlan> {
   if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = await request<WorkoutPlan>(`/api/members/${encodeURIComponent(memberId)}/plans`, {
+  return request<WorkoutPlan>(`/api/members/${encodeURIComponent(memberId)}/plans`, {
     method: "POST",
     body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }),
   })
-  recordPlanRun(plan)
-  return plan
 }
 
 /**
@@ -172,12 +160,10 @@ export async function adjustPlan(
   body: PlanRequest,
 ): Promise<WorkoutPlan> {
   if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  const plan = await request<WorkoutPlan>(
+  return request<WorkoutPlan>(
     `/api/members/${encodeURIComponent(memberId)}/plans/${encodeURIComponent(runId)}/adjust`,
     { method: "POST", body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }) },
   )
-  recordPlanRun(plan)
-  return plan
 }
 
 export async function getMessages(memberId: string): Promise<MemberMessage[]> {
@@ -212,13 +198,17 @@ export async function askCopilot(
   })
 }
 
+/** Every run the backend recorded, generator and copilot, newest first. */
 export async function getTraces(): Promise<RunTraceSummary[]> {
-  return delay(listTraces(), LATENCY.read)
+  return request<RunTraceSummary[]>("/api/traces")
 }
 
-/** @throws ApiError 404 when the run is unknown or has aged out. */
+/**
+ * One run's span waterfall.
+ *
+ * @throws ApiError 404 when the run is unknown, or has aged out of the
+ *   in-memory ring on a backend running without Postgres.
+ */
 export async function getTrace(runId: string): Promise<RunTrace> {
-  const trace = getTraceById(runId)
-  if (!trace) throw new ApiError(`No trace for ${runId}`, 404)
-  return delay(trace, LATENCY.read)
+  return request<RunTrace>(`/api/traces/${encodeURIComponent(runId)}`)
 }

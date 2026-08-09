@@ -7,11 +7,13 @@ from neo4j import Driver, Session
 
 from agent.client import build_extractor
 from agent.extract import Extractor
+from api.console import mount_console
 from api.errors import register_error_handlers
 from api.routes import copilot as copilot_routes
 from api.routes import graph as graph_routes
 from api.routes import members as member_routes
 from api.routes import plans as plan_routes
+from api.runs import InMemoryPlanRunStore, PlanRunStore
 from api.traces import InMemoryTraceStore, TraceStore
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
@@ -37,6 +39,8 @@ class Runtime:
         extractor: Extractor,
         live_extraction: bool,
         traces: TraceStore,
+        plan_runs: PlanRunStore,
+        durable: bool,
     ) -> None:
         self.driver = driver
         self.resolver = resolver
@@ -50,9 +54,17 @@ class Runtime:
         *is* its output; it says so on every answer it returns."""
 
         self.traces = traces
-        """Runs the copilot has recorded. In memory and bounded — see
-        `api/traces.py` for why the durable store is still the generator's to
-        choose."""
+        """Every run both surfaces have recorded, generator and copilot."""
+
+        self.plan_runs = plan_runs
+        """What each generation was asked for, so an adjustment refines its
+        parent rather than rebuilding from the adjustment alone."""
+
+        self.durable = durable
+        """Whether both stores are Postgres-backed. False means bounded
+        in-memory ones: traces are lost on restart and an old plan cannot be
+        refined. Reported on `/health` rather than inferred, because the
+        difference is invisible until the moment it costs something."""
 
 
 @asynccontextmanager
@@ -64,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     at startup rather than mid-request.
     """
     driver = open_driver()
+    pool = None
     try:
         with driver.session() as session:
             vocabulary = Vocabulary.load(session, settings.aliases_path)
@@ -71,11 +84,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Touching the matrix forces the model load and the concept embed now.
         vocabulary.similarities("warm")
         extractor, live = build_extractor()
+
+        if settings.database_url:
+            from api.postgres import open_stores
+
+            traces, plan_runs, pool = open_stores(settings.database_url)
+            durable = True
+        else:
+            traces, plan_runs, durable = InMemoryTraceStore(), InMemoryPlanRunStore(), False
+
         app.state.runtime = Runtime(
-            driver, Resolver(vocabulary), report, extractor, live, InMemoryTraceStore()
+            driver, Resolver(vocabulary), report, extractor, live, traces, plan_runs, durable
         )
         yield
     finally:
+        if pool is not None:
+            pool.close()
         driver.close()
 
 
@@ -98,10 +122,10 @@ app.include_router(graph_routes.router, prefix="/api")
 app.include_router(member_routes.router, prefix="/api")
 app.include_router(plan_routes.router, prefix="/api")
 app.include_router(copilot_routes.router, prefix="/api")
-# `copilot_routes.traces_router` stays unmounted. Only the copilot emits spans;
-# mounting it now would give the console's Traces tab a list containing half the
-# runs it shows today, which is worse than the mock it would replace. It goes up
-# when the generator emits spans too — see docs/decisions.md, *Copilot* 8.
+# Mounted now that both surfaces emit spans. It was held back while only the
+# copilot did, because a run list showing half the runs would have been worse
+# than the fixture it replaced — see docs/decisions.md, *Observability*.
+app.include_router(copilot_routes.traces_router, prefix="/api")
 
 
 def runtime() -> Runtime:
@@ -128,6 +152,7 @@ def health(run: Runtime = Depends(runtime), session: Session = Depends(graph)) -
         "graph": {"nodes": live.node_total, "edges": live.edge_total},
         "vocabulary": {"concepts": len(run.resolver.vocabulary.concepts)},
         "extraction": "live" if run.live_extraction else "scripted",
+        "storage": "postgres" if run.durable else "memory",
     }
 
 
@@ -156,3 +181,7 @@ def resolve(
     """
     labels = frozenset({label}) if label else None
     return run.resolver.resolve(term, labels)
+
+
+# Last, because its catch-all must be matched after every real endpoint.
+mount_console(app, settings.console_dir)

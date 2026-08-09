@@ -69,7 +69,7 @@ class TestScripted:
         it meaningless.
         """
         for case in cases:
-            assert scripted.extract(case.prompt) == case.expected, case.prompt
+            assert scripted.extract(case.prompt).result == case.expected, case.prompt
 
     def test_an_unknown_utterance_is_reported_not_guessed(self, scripted) -> None:
         """No key must degrade to honesty, not to a crash or a fabrication.
@@ -78,13 +78,15 @@ class TestScripted:
         understand should say, and it keeps the whole keyless path a working
         system rather than a broken one.
         """
-        result = scripted.extract("something nobody has labelled")
-        assert result.instructions == []
-        assert result.unmapped == ["something nobody has labelled"]
+        extraction = scripted.extract("something nobody has labelled")
+        assert extraction.result.instructions == []
+        assert extraction.result.unmapped == ["something nobody has labelled"]
+        # No model ran, so the trace must not claim an LLM span for this.
+        assert extraction.model is None
 
     def test_an_empty_prompt_maps_to_nothing(self, scripted) -> None:
         """A request with no prompt is first-class, not an error."""
-        assert scripted.extract("   ") == ExtractionResult()
+        assert scripted.extract("   ").result == ExtractionResult()
 
 
 class TestBoundary:
@@ -151,6 +153,6 @@ def test_the_live_extractor_agrees_with_every_labelled_case(cases) -> None:
     extractor, live = build_extractor()
     assert live
     mismatched = [
-        case.prompt for case in cases if extractor.extract(case.prompt) != case.expected
+        case.prompt for case in cases if extractor.extract(case.prompt).result != case.expected
     ]
     assert not mismatched

@@ -67,7 +67,11 @@ function RunList({
             >
               <span className="flex items-center gap-1.5">
                 <StatusDot status={run.status} />
-                <span className="truncate text-micro font-semibold">{run.prompt}</span>
+                {/* A plan built from switched-off constraints alone carries no
+                    prompt, and an untitled row is unfindable in a list. */}
+                <span className="truncate text-micro font-semibold">
+                  {run.prompt || <span className="font-normal text-faint">no prompt</span>}
+                </span>
               </span>
               <span className="font-mono text-micro text-faint">
                 {run.source} · {run.duration_ms} ms · {run.totals.graph_queries} graph ·{" "}

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 from typing import Protocol
 
@@ -58,17 +59,38 @@ def load_cases(path: Path | None = None) -> list[ExtractionCase]:
     return [ExtractionCase.model_validate(row) for row in json.loads(source.read_text())]
 
 
+class Extraction(BaseModel):
+    """What one extraction produced, and what the call cost.
+
+    Cost travels with the result rather than being read back off the extractor
+    afterwards. A `last_usage` attribute would be a race the moment two coaches
+    build at once — FastAPI runs sync routes in a threadpool over one shared
+    extractor — and the trace would attribute one run's tokens to another.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    result: ExtractionResult
+    model: str | None = None
+    """None when no model ran: an empty prompt, or the scripted stand-in."""
+
+    tokens_in: int = 0
+    tokens_out: int = 0
+    duration_ms: float = 0.0
+
+
 class Extractor(Protocol):
     """Turns one coach utterance into structured instructions."""
 
-    def extract(self, prompt: str) -> ExtractionResult:
+    def extract(self, prompt: str) -> Extraction:
         """Read what the coach asked for.
 
         Args:
             prompt: The coach's own words.
 
         Returns:
-            The instructions, emphasis and anything unmapped.
+            The instructions, emphasis and anything unmapped, with the cost of
+            producing them.
         """
         ...
 
@@ -88,12 +110,12 @@ class ScriptedExtractor:
             case.prompt.strip().lower(): case.expected for case in (cases or load_cases())
         }
 
-    def extract(self, prompt: str) -> ExtractionResult:
+    def extract(self, prompt: str) -> Extraction:
         """Look the utterance up, or report it unmapped."""
         known = self.by_prompt.get(prompt.strip().lower())
         if known is not None:
-            return known
-        return ExtractionResult(unmapped=[prompt] if prompt.strip() else [])
+            return Extraction(result=known)
+        return Extraction(result=ExtractionResult(unmapped=[prompt] if prompt.strip() else []))
 
 
 class AnthropicExtractor:
@@ -109,7 +131,7 @@ class AnthropicExtractor:
         self.client = client
         self.model = model or settings.anthropic_model
 
-    def extract(self, prompt: str) -> ExtractionResult:
+    def extract(self, prompt: str) -> Extraction:
         """Ask the model what the coach asked for.
 
         Thinking is disabled and effort is low: this is transcription into a
@@ -120,8 +142,10 @@ class AnthropicExtractor:
             prompt: The coach's own words.
 
         Returns:
-            The parsed result, schema-guaranteed by the SDK.
+            The parsed result, schema-guaranteed by the SDK, with the token
+            counts and wall time the trace reports.
         """
+        started = time.perf_counter()
         message = self.client.messages.parse(
             model=self.model,
             max_tokens=MAX_TOKENS,
@@ -131,4 +155,13 @@ class AnthropicExtractor:
             thinking={"type": "disabled"},
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.parsed_output
+        # Read defensively: usage is the SDK's to shape, and a trace missing a
+        # token count is a worse reason to fail a coach's build than none.
+        usage = getattr(message, "usage", None)
+        return Extraction(
+            result=message.parsed_output,
+            model=self.model,
+            tokens_in=getattr(usage, "input_tokens", 0) or 0,
+            tokens_out=getattr(usage, "output_tokens", 0) or 0,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )

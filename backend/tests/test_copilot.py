@@ -10,6 +10,7 @@ from copilot.deterministic import NO_KEY_BANNER, Intent, route
 from copilot.tools import MetricReading, MetricSeries, Retrieval, RetrievedMessage
 from graph.driver import graph_session
 from graph.schema import MetricDirection
+from settings import settings
 
 MEMBER = "mbr_01HX9JORDAN"
 
@@ -247,14 +248,29 @@ def test_metric_routing_is_data_driven_not_hardcoded(retrieval: Retrieval) -> No
 # --------------------------------------------------------------- the answer
 
 
-def test_keyless_answer_is_grounded_and_says_it_is_partial(session: Session) -> None:
+@pytest.fixture
+def keyless(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force the no-key path regardless of what the environment holds.
+
+    These two tests describe what a reviewer gets on a cold clone. Reading the
+    ambient key made them assert the developer's `.env` rather than the
+    behaviour — they passed while nobody had a key and failed the moment
+    somebody added one, which is the wrong way round for a suite that is
+    supposed to describe the keyless path.
+    """
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+
+
+def test_keyless_answer_is_grounded_and_says_it_is_partial(
+    session: Session, keyless: None
+) -> None:
     """Without a key the answer still comes from the graph, and admits its limits.
 
     This is the path a reviewer gets on a cold clone, so it has to be real
     retrieval — and it has to say that nothing interpreted the figures, or a
     coach would read composed facts as judgement.
     """
-    assert not has_key(), "this test describes the no-key path"
+    assert not has_key(), "the fixture must have cleared the key"
 
     result = answer(session, MEMBER, "How has she been sleeping?", "cp_test")
     assert result.used_model is False
@@ -267,7 +283,9 @@ def test_keyless_answer_is_grounded_and_says_it_is_partial(session: Session) -> 
     assert result.answer.chart.kind is ChartKind.SLEEP
 
 
-def test_unanswerable_question_names_what_the_record_holds(session: Session) -> None:
+def test_unanswerable_question_names_what_the_record_holds(
+    session: Session, keyless: None
+) -> None:
     """An ungrounded question gets a decline, not an invention.
 
     The failure this system exists to avoid is a fluent answer about data that

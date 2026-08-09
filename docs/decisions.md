@@ -257,3 +257,45 @@ Edits to the provided synthetic data, and why each was made rather than worked a
 5. **`disabled[]` from the builder becomes `Op.REMOVE`, so per-item switches take the same path a typed instruction does.** They get the same refusals, and `injury` is not in the accepted map at all — a request cannot name it, which is the console's locked items enforced in the type system rather than checked at the route.
 
 6. **Extraction is the one part of this system that is not reproducible.** The same sentence can land differently across runs: *"no overhead press"* has resolved both to the `upper push - vertical` pattern and to a single dumbbell press. Both readings are defensible, and the trace names which one happened — but it is the reason the deterministic half was kept deterministic. Everything downstream of the first arrow reproduces exactly.
+
+---
+
+## Observability — real spans, and a store that survives a restart
+
+*2026-08-09*
+
+1. **The recorder wraps the session rather than being threaded through the query modules.** The generator's reads are spread across `safety/standing.py`, `safety/queries.py` and `plan/queries.py`. Passing a recorder into each would mean changing every query function's signature to carry telemetry, and a read added later would silently miss the trace. `graph/recording.py` wraps `neo4j.Session` instead: if it went through the session it is in the account, by construction. The copilot keeps its hand-rolled recording because it owns all nine of its reads in one file.
+
+   The wrapper materialises each result before recording, so a duration covers *fetching* the rows and not merely issuing the query. Lazily consumed, every read would have reported as near-instant.
+
+2. **Stages and reads share one clock, so nothing in a generator waterfall is reconstructed.** `build_copilot_trace` lays its graph spans out by summing durations and says so — it has no start offsets to work from. `RunRecorder` hands both the stage timer and the session wrapper the same origin, so a read renders nested under the stage that actually issued it. The difference is not cosmetic: the first generator trace showed **3437 ms of a 3483 ms run inside `extract`**. Almost the whole latency budget is the one model call, and no amount of Cypher tuning would move it — which is the sort of thing a fabricated waterfall would never have said.
+
+3. **Repeated reads fold into one span, carrying `calls`.** `PATTERN_SIBLINGS` runs once per dropped movement — 40 times on a limited-equipment plan — and the graph fingerprint once per label and relationship type, another 30. Unfolded, a waterfall is sixty rows of two queries and the shape of the run is invisible. Folded, each keeps its first offset and carries the summed cost, which is the figure worth reading anyway.
+
+4. **The fingerprint reads are folded, not hidden.** Stamping a trace with the graph it ran against costs about thirty round trips. It would have been easy to read those through the raw session and keep them out of the account — and it would have made the trace under-report the request's own latency. A reviewer profiling a slow generation should see them.
+
+5. **Postgres, as `tech-stack.md` chose, and the in-memory ring stays as the fallback.** `DATABASE_URL` unset gives bounded in-memory stores, which is what `uv run pytest` and a bare `uvicorn` get. The consequence is real — traces vanish on restart and an old plan cannot be refined — so `/health` reports `storage: postgres | memory` rather than leaving it to be discovered.
+
+6. **Tracing wraps the run; it never sits inside it.** Both the generator and the copilot build their trace after the work is finished and hand it to the store. A store that is down can lose a trace and can never change the plan or the answer a coach gets.
+
+---
+
+## Adjustment — refine, not replace
+
+*2026-08-09*
+
+1. **The bug: an adjustment rebuilt from the adjustment alone.** `adjust` re-extracted the new utterance and generated from *that*, setting `parent_run_id` and nothing more — the pointer was decorative. So *"she's only got dumbbells and a kettlebell"* followed by *"exclude lunges"* returned a session with the lunges gone **and the barbell back**. The equipment limit was never withdrawn; the plan simply forgot it. A coach reading the second sheet would have programmed kit the member does not own, and nothing on the page said anything had been dropped.
+
+   The console made it certain: it sent only the adjustment text as the whole prompt. The route's own docstring claimed "the request carries its own full state", which nothing on either side actually did.
+
+2. **The fix composes structured instructions, not prose.** A `plan_runs` row stores each run's **accumulated** `Instruction`s; an adjustment loads its parent's and appends its own. Concatenating the *prompts* and re-extracting was the obvious alternative and is worse: extraction is the one part of this system that is not reproducible (*Agent runtime* 6), so re-reading an utterance from three refinements ago could quietly reinterpret a constraint the coach set then and has not touched since. Resolution is deterministic and extraction is not, so the structured half is what gets frozen.
+
+   Appending is the whole of the merge, because `constraints.compose` folds directives in sequence and the later one wins where they conflict. No merge logic was added anywhere.
+
+3. **`disabled[]` is explicitly *not* inherited.** It is the builder's live state, so a coach who switched equipment back on would otherwise keep refining against the version that was off. Utterances accumulate; switch positions are read fresh every time.
+
+4. **The builder always starts a fresh run; only the adjust bar refines.** Its prompt is a whole request rather than a delta, so composing it onto the previous run would re-apply constraints the coach had just deleted from the box. Before this, *"Rebuild session"* went through `adjust` — which was harmless only because `adjust` ignored its parent, and would have become a real bug the moment it stopped.
+
+5. **An unknown parent is a 404, not a fresh build.** Silently rebuilding from nothing is the original bug wearing a different hat: it drops every constraint the parent carried and returns a plan that looks like a successful refinement.
+
+6. **The sheet prints the whole trail.** The plan answers to every utterance in the chain, so showing only the newest made an adjusted plan read as though it had forgotten the rest. `prompt_trail` comes from a recursive CTE over the parent pointers.

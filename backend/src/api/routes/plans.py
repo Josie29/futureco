@@ -1,9 +1,16 @@
+import time
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from agent.extract import Extraction, Extractor
 from agent.schemas import ExtractionResult
 from api.deps import GraphSession
 from api.plan_models import Eligibility, PlanPayload, PlanRequest
 from api.plan_wire import eligibility, payload
+from api.runs import PlanRun, accumulate
+from api.traces import build_generator_trace
+from graph.recording import RunRecorder
 from plan.pipeline import generate
 from safety.constraints import ConstraintKind, Op, compose
 from safety.directives import Instruction, to_directives
@@ -53,7 +60,7 @@ def to_instructions(disabled: list[str]) -> tuple[Instruction, ...]:
     return tuple(instructions)
 
 
-def _extract(extractor, prompt: str) -> ExtractionResult:  # noqa: ANN001
+def _extract(extractor: Extractor, prompt: str) -> Extraction:
     """Read the coach's sentence, if there is one.
 
     An empty prompt is a first-class request, not a degenerate one: the builder
@@ -62,8 +69,100 @@ def _extract(extractor, prompt: str) -> ExtractionResult:  # noqa: ANN001
     keeps a keyless deployment on the same code path rather than a fallback.
     """
     if not prompt.strip():
-        return ExtractionResult()
+        return Extraction(result=ExtractionResult())
     return extractor.extract(prompt)
+
+
+def _build(
+    request: Request,
+    session: GraphSession,
+    member_id: str,
+    body: PlanRequest,
+    parent: PlanRun | None,
+) -> PlanPayload:
+    """Generate one session, record what it was asked for, and trace the run.
+
+    The single path behind both endpoints. A fresh build is the case where
+    there is no parent — not a different procedure — so an adjustment cannot
+    drift from a build and the trace has one shape.
+
+    Args:
+        request: The active request, carrying the runtime and its stores.
+        session: An open Neo4j session.
+        member_id: Whose chart to build from.
+        body: The prompt, the window, and any switched-off constraints.
+        parent: The run being refined, or None.
+
+    Returns:
+        The session, its provenance and its dropped movements.
+
+    Raises:
+        HTTPException: 404 if the member is not in the graph; 422 if a
+            `disabled` id names something that cannot be switched off.
+    """
+    runtime = request.app.state.runtime
+    started_at = datetime.now(UTC)
+    began = time.perf_counter()
+
+    heard = _extract(runtime.extractor, body.prompt)
+    # The switched-off items are this request's, never the parent's: they are
+    # the builder's live state, and a coach who switched equipment back on
+    # would otherwise keep refining against the version that was off.
+    asked = to_instructions(body.disabled) + tuple(heard.result.instructions)
+    instructions, emphasis = accumulate(parent, asked, tuple(heard.result.emphasis))
+
+    recorder = RunRecorder()
+    try:
+        generated = generate(
+            session,
+            runtime.resolver,
+            member_id,
+            body.duration_min,
+            instructions,
+            emphasis,
+            parent_run_id=parent.run_id if parent else None,
+            recorder=recorder,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    duration_ms = (time.perf_counter() - began) * 1000
+
+    runtime.plan_runs.record(
+        PlanRun(
+            run_id=generated.run_id,
+            parent_run_id=generated.parent_run_id,
+            member_id=member_id,
+            prompt=body.prompt,
+            duration_min=body.duration_min,
+            instructions=instructions,
+            emphasis=emphasis,
+        )
+    )
+    # Tracing wraps the run rather than living inside it, so a store that is
+    # down can never change the plan a coach gets — the same rule the copilot
+    # route follows.
+    runtime.traces.record(
+        build_generator_trace(
+            run_id=generated.run_id,
+            prompt=body.prompt,
+            started_at=started_at,
+            duration_ms=duration_ms,
+            recorder=recorder,
+            extraction=heard,
+            generated=generated,
+        )
+    )
+
+    trail = [run.prompt for run in runtime.plan_runs.lineage(generated.run_id) if run.prompt]
+    return payload(
+        generated,
+        body.prompt,
+        _title(body.duration_min),
+        "Today",
+        unmapped=tuple(heard.result.unmapped),
+        prompt_trail=tuple(trail),
+    )
 
 
 def _title(minutes: int) -> str:
@@ -85,10 +184,9 @@ def create_plan(
 ) -> PlanPayload:
     """Build a plan for one member under one request.
 
-    The prompt is accepted and echoed but not yet interpreted — extraction is
-    the only part of this system a language model touches, and it is not wired
-    in. Everything the plan *is* comes from `disabled[]` and the member's
-    chart, which is also why this endpoint works with no API key.
+    A fresh run: nothing before it constrains it. The coach's sentence becomes
+    `Instruction`s through one extraction call, and everything after that is
+    Python and Cypher.
 
     Args:
         member_id: Whose chart to build from.
@@ -103,28 +201,7 @@ def create_plan(
         HTTPException: 404 if the member is not in the graph; 422 if a
             `disabled` id names something that cannot be switched off.
     """
-    runtime = request.app.state.runtime
-    heard = _extract(runtime.extractor, body.prompt)
-
-    try:
-        generated = generate(
-            session,
-            runtime.resolver,
-            member_id,
-            body.duration_min,
-            to_instructions(body.disabled) + tuple(heard.instructions),
-            tuple(heard.emphasis),
-        )
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-
-    return payload(
-        generated,
-        body.prompt,
-        _title(body.duration_min),
-        "Today",
-        unmapped=tuple(heard.unmapped),
-    )
+    return _build(request, session, member_id, body, parent=None)
 
 
 @router.post(
@@ -135,51 +212,50 @@ def create_plan(
 def adjust_plan(
     member_id: str, run_id: str, body: PlanRequest, session: GraphSession, request: Request
 ) -> PlanPayload:
-    """Build a new session that supersedes an earlier one.
+    """Refine an earlier session into a new one.
 
     An adjustment is a new run carrying a pointer to its parent, never a
     mutation: the trace a coach already acted on stays intact and auditable.
-    That also means the request carries its own full state — the prompt, the
-    window and the switched-off items — so nothing here has to recall what the
-    parent asked for, and no run store is needed to refine a plan.
+
+    It **composes onto** the parent rather than replacing it. The parent's
+    accumulated `Instruction`s are loaded and this utterance's are appended, so
+    *"only dumbbells"* followed by *"exclude lunges"* is a session with both —
+    which is what a coach refining a plan means, and what this endpoint
+    previously got wrong by rebuilding from the adjustment alone.
+
+    Appending is the whole of the merge because `safety.constraints.compose`
+    folds directives in sequence: the later utterance is the one that wins
+    where the two conflict. What is *not* inherited is `disabled[]`, which is
+    the builder's live state and belongs to this request.
 
     Args:
         member_id: Whose chart to build from.
         run_id: The run being refined, recorded as this one's parent.
-        body: The full request, not a delta.
+        body: This utterance and the current builder state.
         session: An open Neo4j session.
         request: The active request, carrying the warmed resolver.
 
     Returns:
-        A new session, with `parent_run_id` set.
+        A new session, with `parent_run_id` set and the full prompt trail.
 
     Raises:
-        HTTPException: 404 if the member is not in the graph; 422 if a
+        HTTPException: 404 if the member is not in the graph, or if the run
+            being refined is unknown — a plan cannot be built on a request the
+            server can no longer read, and silently treating it as a fresh
+            build would drop constraints the coach never withdrew. 422 if a
             `disabled` id names something that cannot be switched off.
     """
-    runtime = request.app.state.runtime
-    heard = _extract(runtime.extractor, body.prompt)
-
-    try:
-        generated = generate(
-            session,
-            runtime.resolver,
-            member_id,
-            body.duration_min,
-            to_instructions(body.disabled) + tuple(heard.instructions),
-            tuple(heard.emphasis),
-            parent_run_id=run_id,
+    parent = request.app.state.runtime.plan_runs.get(run_id)
+    if parent is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"No run {run_id} to refine. Build a new plan instead.",
         )
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-
-    return payload(
-        generated,
-        body.prompt,
-        _title(body.duration_min),
-        "Today",
-        unmapped=tuple(heard.unmapped),
-    )
+    if parent.member_id != member_id:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"Run {run_id} does not belong to {member_id}."
+        )
+    return _build(request, session, member_id, body, parent=parent)
 
 
 @router.get(

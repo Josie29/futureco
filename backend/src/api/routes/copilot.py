@@ -135,25 +135,25 @@ def copilot_health() -> dict:
     return {"synthesis": has_key(), "path": "model" if has_key() else "retrieval"}
 
 
-# Written and left unregistered. The traces surface belongs to the generator
-# stream, which is the bigger span producer and should pick the durable store
-# (docs/decisions.md, *Copilot* 8). These exist so work starts from a running
-# store with a real producer rather than from an empty file.
+# Both surfaces record runs, so this is mounted. It lives beside the copilot
+# because that is where the first producer was; the store it reads is shared,
+# and `source` on each row says which surface produced it.
 traces_router = APIRouter(tags=["traces"])
 
 
-@traces_router.get("/traces")
+@traces_router.get("/traces", summary="Recorded runs, newest first")
 def list_traces(request: Request) -> list[RunTraceSummary]:
-    """Every run this process still holds, newest first."""
+    """Every recorded run, from both the generator and the copilot."""
     return request.app.state.runtime.traces.list()
 
 
-@traces_router.get("/traces/{run_id}")
+@traces_router.get("/traces/{run_id}", summary="One run's span waterfall")
 def get_trace(request: Request, run_id: str) -> RunTrace:
     """One run's span waterfall.
 
     Raises:
-        HTTPException: 404 when the run is unknown or has aged out of the ring.
+        HTTPException: 404 when the run is unknown, or has aged out of the
+            in-memory ring on a process with no database configured.
     """
     trace = request.app.state.runtime.traces.get(run_id)
     if trace is None:
