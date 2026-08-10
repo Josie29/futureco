@@ -11,7 +11,7 @@ flowchart TB
   Coach([Coach])
   Console["Coach console<br/>React · Vite · served by the API"]
 
-  subgraph API["FastAPI container — one origin, one command"]
+  subgraph API["FastAPI container"]
     Gen["Generator<br/>plan.pipeline"]
     Cop["Copilot<br/>SDK tool_runner"]
     Traces["/api/traces"]
@@ -29,16 +29,16 @@ flowchart TB
   Console -->|question| Cop
   Console -->|run id| Traces
 
-  Gen -->|"one call: prose to Instruction list"| LLM
+  Gen -->|"prose → Instructions"| LLM
   Gen --> Resolve
   Gen --> Neo
   Resolve --> Emb
   Resolve --> Filter
   Filter --> Neo
-  Cop -->|"picks which tool, never writes Cypher"| LLM
+  Cop -->|"tool choice, not Cypher"| LLM
   Cop -->|"9 typed tools, constant Cypher"| Neo
   Gen -.->|spans| PG
-  Cop -.->|spans| PG
+  Cop -.-> PG
   Traces --> PG
 
   style LLM fill:#fff3cd,stroke:#b8860b
