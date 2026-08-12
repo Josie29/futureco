@@ -1,35 +1,65 @@
-import type { QuickPrompt } from "@/types"
+import { QuickPromptGroup, type QuickPrompt } from "@/types"
 
 /**
- * The quick-prompt palette (ASSESSMENT.md:39-42), written as questions rather
- * than labels.
+ * The quick-prompt palette (ASSESSMENT.md:39-42), in the two rows the spec
+ * lays it out in: questions about the member, then the charts.
  *
- * Seven two-word chips read as a filter bar, not as things you can ask, and
- * three of them differed only in whether they drew a chart. Folded to four
- * questions a coach would say out loud; charts come back with the answer where
- * a chart is the clearest form, rather than being a separate button. Anything
- * else is still typeable, and the backend routes far more than these four —
+ * An earlier pass folded all seven into four questions, on the grounds that
+ * three of them differed only in whether they drew a chart, and that a chart
+ * should arrive with the answer rather than behind its own button. That still
+ * holds for the questions — `How's her adherence trending?` returns a chart and
+ * sits in the top row regardless. What it got wrong is that `Compare last 4
+ * weeks` is not the same request as `How's her adherence trending?`: one asks
+ * for a trend, the other for sessions done against sessions planned, which is
+ * the framing that leads to an action. The chart row is back because those are
+ * distinct questions, not because charts need buttons.
+ *
+ * Labels stay as a coach would say them; `prompt` is what the backend receives,
+ * so the two can differ where the spoken form is ambiguous to route on. Anything
+ * else is still typeable, and the backend routes far more than these seven —
  * every metric she has readings for is reachable by name.
  *
  * These live here rather than in the API because they are console copy, not
- * member data: the same four questions suit any member, and round-tripping
- * them would make the palette wait on a fetch to render.
+ * member data: the same prompts suit any member, and round-tripping them would
+ * make the palette wait on a fetch to render.
  */
 export const QUICK_PROMPTS: QuickPrompt[] = [
   {
-    label: "What do I need to know this morning?",
+    label: "Show me the brief",
     prompt: "Show me the brief",
-    is_chart: false,
+    group: QuickPromptGroup.MEMBER,
   },
   {
     label: "How's her adherence trending?",
     prompt: "How is her adherence trending?",
-    is_chart: true,
+    group: QuickPromptGroup.MEMBER,
   },
-  { label: "How has she been sleeping?", prompt: "How has she been sleeping?", is_chart: true },
+  {
+    label: "How has she been sleeping?",
+    prompt: "How has she been sleeping?",
+    group: QuickPromptGroup.MEMBER,
+  },
   {
     label: "What's changed since last week?",
     prompt: "What changed since last week?",
-    is_chart: false,
+    group: QuickPromptGroup.MEMBER,
+  },
+  {
+    label: "Plot adherence trend",
+    prompt: "Plot her adherence trend",
+    group: QuickPromptGroup.CHARTS,
+  },
+  {
+    label: "Show message pattern",
+    prompt: "Show her message pattern",
+    group: QuickPromptGroup.CHARTS,
+  },
+  {
+    // Spelled out because the spoken form routes to the adherence trend, which
+    // is the chart the row above already shows. What earns a separate chip is
+    // completed against planned, in sessions rather than percent.
+    label: "Compare last 4 weeks",
+    prompt: "Compare sessions completed against sessions planned for the last 4 weeks",
+    group: QuickPromptGroup.CHARTS,
   },
 ]

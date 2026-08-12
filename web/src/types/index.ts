@@ -545,11 +545,25 @@ export interface CopilotMessage {
   degraded?: string | null
 }
 
-/** A quick prompt in the palette. `chart` ones return a ChartPayload. */
+/** Which row of the palette a quick prompt sits in (ASSESSMENT.md:41-42). */
+export enum QuickPromptGroup {
+  /** Questions about the loaded member. Several return a chart alongside the prose. */
+  MEMBER = "member",
+  /**
+   * Chips whose point *is* the chart.
+   *
+   * Separated from `MEMBER` by what the coach is asking for, not by whether a
+   * ChartPayload comes back — "How's her adherence trending?" also returns one,
+   * and still belongs with the questions.
+   */
+  CHARTS = "charts",
+}
+
+/** A quick prompt in the palette. */
 export interface QuickPrompt {
   label: string
   prompt: string
-  is_chart: boolean
+  group: QuickPromptGroup
 }
 
 /**

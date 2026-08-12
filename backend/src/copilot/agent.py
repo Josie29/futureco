@@ -121,7 +121,26 @@ ANSWER_SCHEMA: dict[str, Any] = {
         "chart": {
             "type": ["object", "null"],
             "properties": {
-                "kind": {"type": "string", "enum": [k.value for k in ChartKind]},
+                # Described rather than left as a bare enum. Without this the
+                # model reads five opaque strings and picks `adherence` for
+                # anything adherence-shaped, which made `weekly_comparison`
+                # unreachable — "compare the last 4 weeks" returned the percent
+                # trend, the one chart the coach already had.
+                "kind": {
+                    "type": "string",
+                    "enum": [k.value for k in ChartKind],
+                    "description": (
+                        "adherence: weekly completion percentage over time. The "
+                        "default for a trend, an overview or the morning brief. "
+                        "weekly_comparison: the same weeks counted in sessions "
+                        "done against sessions planned. Choose it only when the "
+                        "question is about sessions, or explicitly asks what she "
+                        "did versus what was scheduled. "
+                        "sleep: her sleep series against her goal. "
+                        "message_pattern: how often she wrote, by adherence week. "
+                        "metric: any other metric, with metric_id set."
+                    ),
+                },
                 "metric_id": {"type": ["string", "null"]},
             },
             "required": ["kind", "metric_id"],

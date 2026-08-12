@@ -3,7 +3,7 @@ import { QUICK_PROMPTS } from "@/features/copilot/prompts"
 import { CopilotChart } from "@/features/copilot/CopilotChart"
 import { formatMessageTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"
-import type { CopilotMessage, MemberMessage } from "@/types"
+import { QuickPromptGroup, type CopilotMessage, type MemberMessage } from "@/types"
 
 type Tab = "copilot" | "messages"
 
@@ -234,10 +234,12 @@ export function CopilotDock({
       >
         {tab === "copilot" ? (
           <>
-            {/* Full questions, stacked. A coach reads these as things to ask;
-                the two-word chips they replaced read as a filter bar. */}
+            {/* Questions stacked full-width, because a coach reads those as
+                things to ask. The chart chips wrap inline instead: they are
+                named outputs rather than sentences, and stacking all seven the
+                same way would read as a filter bar. */}
             <div className="flex flex-col gap-1">
-              {QUICK_PROMPTS.map((q) => (
+              {QUICK_PROMPTS.filter((q) => q.group === QuickPromptGroup.MEMBER).map((q) => (
                 <button
                   key={q.label}
                   type="button"
@@ -247,6 +249,21 @@ export function CopilotDock({
                   {q.label}
                 </button>
               ))}
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-micro uppercase tracking-wide text-soft">Charts</span>
+              <div className="flex flex-wrap gap-1">
+                {QUICK_PROMPTS.filter((q) => q.group === QuickPromptGroup.CHARTS).map((q) => (
+                  <button
+                    key={q.label}
+                    type="button"
+                    onClick={() => send(q.prompt)}
+                    className="rounded-[4px] border border-line px-2 py-1 text-left text-micro text-dim hover:border-cobalt hover:text-cobalt"
+                  >
+                    {q.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <CopilotThread
               messages={copilotMessages}
