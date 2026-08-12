@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from graph.schema import NodeLabel, RelType
 from safety.constraints import Composition, ConstraintKind, ConstraintSet, Origin
 from safety.evidence import EvidencePath, ExerciseEvidence, Hop, Signal, SignalKind
-from safety.policy import EXCLUDING, Policy, Status, Verdict, score
+from safety.policy import ATTRIBUTION_ORDER, Policy, Status, Verdict, score
 from safety.queries import AnatomyRow, CatalogRow, ClinicalRow, anatomy, catalog, clinical
 
 # An injury only constrains while it is live. Without this a resolved injury
@@ -203,22 +203,42 @@ def _constraint_signals(row: CatalogRow, constraints: ConstraintSet) -> list[Sig
 
 
 def _attribution(verdicts: tuple[Verdict, ...]) -> Attribution:
-    """Count removals per reason and per attributed cause."""
-    per_reason: Counter[str] = Counter()
-    attributed: Counter[str] = Counter()
+    """Count removals per reason and per attributed cause.
+
+    Both breakdowns come out in `ATTRIBUTION_ORDER`, not in the order the
+    verdicts happened to introduce each cause. The counts were always right,
+    but they were accumulated by iterating a set of signal kinds, and Python
+    randomises string hashing per process — so two runs of the same plan
+    printed the same figures in different orders, and a trace that claims to
+    reproduce byte for byte did not survive being diffed against itself.
+
+    `ATTRIBUTION_ORDER` rather than any stable order because it is already the
+    precedence `Verdict.attributed_to` picks by, and
+    `test_safety_policy.test_every_excluding_kind_is_attributable` holds it to
+    the same membership as `EXCLUDING`.
+
+    Args:
+        verdicts: Every verdict the filter produced, excluded ones included.
+
+    Returns:
+        The breakdown counted both ways, each in precedence order, with causes
+        that removed nothing left out rather than reported as zero.
+    """
+    per_reason: Counter[SignalKind] = Counter()
+    attributed: Counter[SignalKind] = Counter()
     removed = 0
     for verdict in verdicts:
         if verdict.status is not Status.EXCLUDED:
             continue
         removed += 1
-        for kind in {s.kind for s in verdict.signals if s.kind in EXCLUDING}:
-            per_reason[kind.value] += 1
+        kinds = {signal.kind for signal in verdict.signals}
+        per_reason.update(kind for kind in ATTRIBUTION_ORDER if kind in kinds)
         cause = verdict.attributed_to
         if cause is not None:
-            attributed[cause.value] += 1
+            attributed[cause] += 1
     return Attribution(
-        per_reason=dict(per_reason),
-        attributed=dict(attributed),
+        per_reason={k.value: per_reason[k] for k in ATTRIBUTION_ORDER if per_reason[k]},
+        attributed={k.value: attributed[k] for k in ATTRIBUTION_ORDER if attributed[k]},
         removed=removed,
         kept=len(verdicts) - removed,
     )

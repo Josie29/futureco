@@ -41,6 +41,13 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     image: futureco-backend
+    # Compose builds a named image only when it is *absent*, so a tree that has
+    # moved on since the last build seeds the graph from stale code and every
+    # symptom points somewhere else — ten SKOS assertions failing on properties
+    # the build writes, on a build that predates them. `build` rebuilds on every
+    # `up`, which the layer cache makes free when nothing has changed. A cold
+    # clone is unaffected: it had to build anyway.
+    pull_policy: build
     command: ["python", "-m", "graph.build.main"]
     environment: &backend-env
       # Container-to-container, so the service name and the in-container port,
@@ -55,6 +62,7 @@ services:
   api:
     build: *backend-build
     image: futureco-backend
+    pull_policy: build
     ports:
       - "${API_PORT:-8000}:8000"
     environment:

@@ -8,7 +8,7 @@ from safety.constraints import ConstraintKind, Op, Origin, UnappliedReason, comp
 from safety.directives import Instruction, to_directives
 from safety.evidence import SignalKind
 from safety.filter import run
-from safety.policy import Status
+from safety.policy import ATTRIBUTION_ORDER, Status
 from safety.standing import load_standing
 from settings import settings
 
@@ -73,6 +73,25 @@ class TestBaseline:
             "missing_equipment": 26,
             "dislike": 1,
         }
+
+    def test_the_breakdowns_are_emitted_in_precedence_order(
+        self, session, resolver
+    ) -> None:
+        """Two runs of one plan have to print the same trace, not just the same
+        figures.
+
+        The counts were accumulated by iterating a set of signal kinds, and
+        Python randomises string hashing per process — so the same plan printed
+        `{contraindication, missing_equipment, dislike}` in one run and
+        `{missing_equipment, contraindication, dislike}` in the next. Nothing
+        was wrong with either, which is exactly why it survived: it is only
+        visible when two runs are diffed, which is the one thing a provenance
+        trace exists to support.
+        """
+        result = filter_for(session, resolver)
+        precedence = [kind.value for kind in ATTRIBUTION_ORDER]
+        for breakdown in (result.attribution.per_reason, result.attribution.attributed):
+            assert list(breakdown) == [k for k in precedence if k in breakdown]
 
     def test_every_contraindicated_exercise_is_excluded_with_its_rationale(
         self, session, resolver

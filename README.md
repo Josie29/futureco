@@ -2,6 +2,8 @@
 
 A coach-facing dashboard over two knowledge graphs: **KG1**, the movement and clinical domain, and **KG2**, one member's context. Safety is enforced by deterministic graph traversal, never by prompt instruction — the filter takes a typed constraint set, not a string, so no language model has a path around it.
 
+**Live: [api-production-db867.up.railway.app](https://api-production-db867.up.railway.app)** — the coach console, served by the API from one origin. Both graphs are seeded at deploy time by the same `graph.build.main` that `docker compose up` runs, so it holds the same 224 nodes and 538 edges as a local build; [`/health`](https://api-production-db867.up.railway.app/health) reports the live counts. Extraction is live there, so the model half works too.
+
 Full spec in [`ASSESSMENT.md`](./ASSESSMENT.md). Synthetic data only.
 
 ## Architecture
