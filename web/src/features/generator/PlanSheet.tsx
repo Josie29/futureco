@@ -265,6 +265,43 @@ function DroppedDisclosure({ filtered }: { filtered: FilteredExercise[] }) {
   )
 }
 
+/**
+ * What the marks and chips mean, said once instead of guessed at.
+ *
+ * Four chip states on two axes plus the verdict mark on a third is more than a
+ * sheet can carry implicitly — the emphasis chip especially, which is the newest
+ * and the one that explains why a movement is present at all.
+ *
+ * Ordered the way a row reads: the mark sits in the gutter, so it comes first,
+ * then the muscle chips strongest to weakest, then equipment. Fixed rather than
+ * built from the plan, so it never moves between one session and the next.
+ */
+function ChipKey() {
+  return (
+    <ul
+      aria-label="What the marks and chips mean"
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-soft bg-ground px-3.5 py-1.5"
+    >
+      <li className="flex items-center gap-1 text-micro text-faint">
+        <Mark verdict={Verdict.CAUTION} />
+        caution
+      </li>
+      <li>
+        <Tag tone="focus">emphasis</Tag>
+      </li>
+      <li>
+        <Tag tone="goal">goal</Tag>
+      </li>
+      <li>
+        <Tag tone="muscle">trained</Tag>
+      </li>
+      <li>
+        <Tag tone="equipment">equipment</Tag>
+      </li>
+    </ul>
+  )
+}
+
 /** Where the movements went, so the sheet reconciles with the builder. */
 function Funnel({ trace }: { trace: ProvenanceTrace }) {
   return (
@@ -401,6 +438,9 @@ export function PlanSheet({
       </header>
 
       <ResolutionPanel trace={plan.trace} />
+      {/* Directly above the first block rather than up in the header: it
+          explains the rows, so it sits against them. */}
+      <ChipKey />
 
       {BLOCK_ORDER.map((block) => {
         const items = plan.exercises.filter((e) => e.block === block)
