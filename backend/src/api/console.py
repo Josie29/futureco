@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 # Serving the console from the API container is what makes `docker compose up`
@@ -16,6 +17,38 @@ from fastapi.staticfiles import StaticFiles
 # index.html, because the router owns `/m/:id`, `/traces` and `/admin/graph`
 # and a deep link to one of those has to survive a reload.
 API_PREFIXES: tuple[str, ...] = ("api/", "health", "docs", "redoc", "openapi.json")
+
+# A content-hashed filename cannot change meaning, so a year is safe and the
+# browser never asks about it again. Vite names every asset that way.
+IMMUTABLE = "public, max-age=31536000, immutable"
+
+# Everything else is unhashed and names a moving target — above all
+# `index.html`, which is the map to the hashed chunks. Left to the browser's
+# own heuristics it gets cached, and a returning coach is pinned to the chunk
+# graph of whichever deploy they first opened: a console one release behind,
+# with no error anywhere to say so. `no-cache` means revalidate, not never
+# store, so the ETag turns the check into a 304 and costs nothing.
+REVALIDATE = "no-cache"
+
+
+class HashedAssets(StaticFiles):
+    """`/assets`, cached for a year because every name carries its own hash.
+
+    The class exists only to add the header — Starlette has no hook for it, and
+    a middleware would have to re-derive which requests were assets from the
+    path, which is the routing decision already made here.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        """Serve a file, cached hard.
+
+        Args and returns are passed through untouched. They are untyped because
+        the signature is Starlette's and has gained arguments across versions;
+        this override decorates the result and has no business restating it.
+        """
+        response = super().file_response(*args, **kwargs)
+        response.headers["cache-control"] = IMMUTABLE
+        return response
 
 
 def mount_console(app: FastAPI, directory: Path | None) -> bool:
@@ -36,7 +69,7 @@ def mount_console(app: FastAPI, directory: Path | None) -> bool:
 
     # Hashed filenames, so they are safe to cache hard and are the only thing
     # in the bundle that should be.
-    app.mount("/assets", StaticFiles(directory=directory / "assets"), name="assets")
+    app.mount("/assets", HashedAssets(directory=directory / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def console(path: str) -> FileResponse:
@@ -58,9 +91,9 @@ def mount_console(app: FastAPI, directory: Path | None) -> bool:
         # the bundle and read the image's filesystem.
         if path and candidate.is_file():
             if candidate.resolve().is_relative_to(directory.resolve()):
-                return FileResponse(candidate)
+                return FileResponse(candidate, headers={"cache-control": REVALIDATE})
             raise HTTPException(status.HTTP_404_NOT_FOUND, "No such file")
 
-        return FileResponse(index)
+        return FileResponse(index, headers={"cache-control": REVALIDATE})
 
     return True
