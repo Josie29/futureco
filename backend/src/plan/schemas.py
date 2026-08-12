@@ -292,6 +292,15 @@ class Block(BaseModel):
     goal_muscles: tuple[str, ...] = ()
     """The subset of `muscles` some goal of the member's targets."""
 
+    focus_muscles: tuple[str, ...] = ()
+    """The subset of `muscles` this request asked to emphasise.
+
+    Carried beside `goal_muscles` rather than folded into it because the two
+    are independent and a sheet has to tell them apart: a goal is what her
+    chart has wanted all along, an emphasis is what the coach asked for this
+    session. A muscle can be both, and `Candidate.key` ranks on them in that
+    order."""
+
 
 class ShortfallKind(StrEnum):
     """A way the plan is less than the request asked for."""

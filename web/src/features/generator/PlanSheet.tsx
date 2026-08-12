@@ -81,7 +81,10 @@ function ExerciseRow({ exercise }: { exercise: PlanExercise }) {
 
           <div className="mt-[0.1875rem] flex flex-wrap gap-1">
             {exercise.muscles.map((m) => (
-              <Tag key={m.name} tone={m.is_goal_target ? "goal" : "muscle"}>
+              // Emphasis before goal when a muscle is both: the request is why
+              // this movement is on the sheet, and the goal it also serves is
+              // still one line down under "Why this one?".
+              <Tag key={m.name} tone={m.is_focus ? "focus" : m.is_goal_target ? "goal" : "muscle"}>
                 {m.name}
               </Tag>
             ))}

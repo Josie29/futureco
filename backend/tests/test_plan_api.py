@@ -197,6 +197,33 @@ class TestContent:
         tags = [tag for e in plan["exercises"] for tag in e["muscles"]]
         assert any(tag["is_goal_target"] for tag in tags)
 
+    def test_a_plan_with_no_emphasis_flags_no_muscle_as_focus(self, plan) -> None:
+        """The flag has to mean something, so it must be off by default."""
+        tags = [tag for e in plan["exercises"] for tag in e["muscles"]]
+        assert not any(tag["is_focus"] for tag in tags)
+
+    def test_the_emphasised_muscle_is_flagged_on_the_movements_that_train_it(
+        self, client
+    ) -> None:
+        """The sheet's only surface for what the coach asked for.
+
+        `is_focus` is independent of `is_goal_target` — chest is no goal of
+        hers, so without this the two movements the emphasis put in the session
+        render exactly like the ones it did not touch, and the request is
+        visible only to a coach who expands the reasons.
+        """
+        response = client.post(
+            f"/api/members/{MEMBER}/plans",
+            json={
+                "duration_min": 50,
+                "prompt": "Full-body session today with some isolation work around her pecs.",
+            },
+        )
+        assert response.status_code == 200, response.text
+        tags = [tag for e in response.json()["exercises"] for tag in e["muscles"]]
+        assert {tag["name"] for tag in tags if tag["is_focus"]} == {"chest"}
+        assert not any(tag["is_focus"] and tag["is_goal_target"] for tag in tags)
+
 
 class TestDisabled:
     """The builder's per-item switches."""

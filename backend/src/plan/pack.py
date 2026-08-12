@@ -117,6 +117,7 @@ def _block(candidate: Candidate, section: Section, sets: int, anchored: bool = F
         reasons=reasons_for(
             candidate.verdict, candidate.movement, candidate.role, candidate.emphasised
         ),
+        focus_muscles=candidate.emphasised,
         **_catalog_fields(candidate.movement),
     )
 

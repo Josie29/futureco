@@ -59,10 +59,18 @@ class ConceptIntent(StrEnum):
 
 
 class MuscleTag(BaseModel):
-    """A muscle a movement trains, flagged when a goal targets it."""
+    """A muscle a movement trains, and why it is worth pointing at.
+
+    Two independent flags rather than one three-valued field: a muscle can be
+    both a standing goal's target and this request's emphasis, and the console
+    decides which to render rather than the wire deciding for it.
+    """
 
     name: str
     is_goal_target: bool
+    is_focus: bool = False
+    """Whether this request asked to emphasise it. Defaults false so a plan
+    built with no emphasis serialises exactly as it did before."""
 
 
 class PlanExercise(BaseModel):

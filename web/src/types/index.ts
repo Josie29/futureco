@@ -243,10 +243,17 @@ export interface Eligibility {
   excluded_by: Record<FilterCause, number>
 }
 
-/** A muscle this exercise trains, flagged when it matches a goal target. */
+/** A muscle this exercise trains, and why it is worth pointing at. */
 export interface MuscleTag {
   name: string
+  /** Whether one of the member's standing goals targets it. */
   is_goal_target: boolean
+  /**
+   * Whether this request asked to emphasise it. Independent of the above — a
+   * muscle can be both, and the sheet renders the emphasis, because that is
+   * what put the movement on it.
+   */
+  is_focus: boolean
 }
 
 /**

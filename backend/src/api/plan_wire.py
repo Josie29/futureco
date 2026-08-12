@@ -87,6 +87,7 @@ def _note(block: Block) -> str | None:
 def _exercise(block: Block) -> PlanExercise:
     """Project one scheduled block onto the console's shape."""
     goal_muscles = set(block.goal_muscles)
+    focus_muscles = set(block.focus_muscles)
     dose = block.prescription
     return PlanExercise(
         id=block.exercise_id,
@@ -99,7 +100,11 @@ def _exercise(block: Block) -> PlanExercise:
         per_side=dose.per_side,
         minutes=round(dose.total_seconds / 60, 1),
         muscles=[
-            MuscleTag(name=muscle, is_goal_target=muscle in goal_muscles)
+            MuscleTag(
+                name=muscle,
+                is_goal_target=muscle in goal_muscles,
+                is_focus=muscle in focus_muscles,
+            )
             for muscle in block.muscles
         ],
         equipment=list(block.equipment),
