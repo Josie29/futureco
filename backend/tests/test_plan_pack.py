@@ -5,7 +5,7 @@ from plan.families import SLOT_ORDER
 from plan.pack import MAX_MAIN_SLOTS, pack
 from plan.prescribe import MAX_SETS
 from plan.queries import movement_facts
-from plan.schemas import Section, ShortfallKind, Slot
+from plan.schemas import ReasonKind, Section, ShortfallKind, Slot
 from safety.constraints import compose
 from safety.filter import run
 from safety.standing import load_standing
@@ -155,6 +155,128 @@ class TestGoalAnchor:
         for minutes in (10, 20, 50):
             plan = pack(result, facts, minutes)
             assert not {b.exercise_id for b in plan.blocks if b.anchored} & excluded
+
+
+class TestEmphasis:
+    """What *"isolation work around her pecs"* has to actually do.
+
+    Emphasis reaches the packer as resolved muscle names and acts only on
+    `Candidate.key`, inside the pool the filter already cleared. Before that it was
+    threaded as far as the reason lines and no further, so a plan could name
+    the muscle a coach asked for while containing no work for it.
+    """
+
+    def test_the_emphasised_muscle_reaches_the_main_block(self, result, facts) -> None:
+        """The bug this exists for.
+
+        By rank alone her fifty-minute plan programs one chest movement and
+        gives the upper-push slot's other place to an overhead press. A coach
+        who asked for pecs and got a shoulder press has been ignored in a way
+        the reason lines still described as applied.
+        """
+        chest = {
+            verdict.exercise_id
+            for verdict in result.eligible
+            if "chest" in facts[verdict.exercise_id].muscles
+        }
+        baseline = {b.exercise_id for b in pack(result, facts, 50).blocks}
+        emphasised = {b.exercise_id for b in pack(result, facts, 50, frozenset({"chest"})).blocks}
+        assert len(chest & emphasised) > len(chest & baseline)
+
+    def test_only_the_movements_that_train_it_claim_the_emphasis(
+        self, result, facts
+    ) -> None:
+        """One intersection decides both the ranking and the reason line.
+
+        They used to be computed separately — the packer counted the overlap to
+        rank on, `why` recomputed it to write the sentence — so a block could in
+        principle be promoted for a muscle it never claimed, or claim one it was
+        not promoted for.
+        """
+        for block in pack(result, facts, 50, frozenset({"chest"})).blocks:
+            claimed = [r for r in block.reasons if r.kind is ReasonKind.FOCUS_MATCH]
+            assert bool(claimed) == ("chest" in block.muscles), block.name
+
+    def test_a_short_session_still_reaches_it(self, result, facts) -> None:
+        """Three main slots, one spent on the goal anchor.
+
+        Ordering inside a slot is not enough here — the round-robin deals one
+        exercise per slot, so the emphasis only lands if the slot holding it is
+        dealt early. This is what `_slot_order`'s focus term is for.
+        """
+        plan = pack(result, facts, 20, frozenset({"chest"}))
+        assert any("chest" in b.muscles for b in plan.section(Section.MAIN))
+
+    def test_no_emphasis_leaves_the_plan_exactly_as_it_was(self, result, facts) -> None:
+        """`Candidate.key` has to collapse to the safety rank when nothing is asked.
+
+        Every window, because the term that would drift is the one the set
+        solver and the slot deal order both read.
+        """
+        for minutes in (20, 45, 50, 120):
+            assert pack(result, facts, minutes) == pack(result, facts, minutes, frozenset())
+
+    def test_emphasis_cannot_promote_a_cautioned_movement(self, result, facts) -> None:
+        """The property that lets emphasis act outside the safety filter.
+
+        Her only quad work is her three cautioned split squats and lunges, so
+        emphasising quads is the strongest pull the catalog can exert towards a
+        caution. `penalty` leads `Candidate.key`, so the clean movement in that slot
+        is still programmed first and the plan is unchanged.
+        """
+        cautioned = {v.exercise_id for v in result.eligible if v.penalty}
+        for minutes in (20, 50):
+            baseline = pack(result, facts, minutes)
+            emphasised = pack(result, facts, minutes, frozenset({"quads"}))
+            assert {b.exercise_id for b in emphasised.blocks if b.penalty} <= (
+                {b.exercise_id for b in baseline.blocks} & cautioned
+            )
+
+    def test_emphasis_never_reaches_an_excluded_movement(self, result, facts) -> None:
+        """Ranking widens nothing.
+
+        Two of her three chest exercises are excluded on equipment, so this is
+        the case where a focus score could do real damage if it were applied
+        before the filter rather than after it.
+        """
+        excluded = {v.exercise_id for v in result.verdicts if not v.eligible}
+        for minutes in (10, 20, 50):
+            plan = pack(result, facts, minutes, frozenset({"chest"}))
+            assert not {b.exercise_id for b in plan.blocks} & excluded
+
+    @pytest.mark.parametrize("minutes", [45, 50])
+    def test_the_emphasis_earns_the_surplus_sets(self, result, facts, minutes: int) -> None:
+        """"Isolation work around her pecs" is volume, not just presence.
+
+        Surplus sets are spent in `Candidate.key` order, so the emphasised movements
+        are dosed before equally clean ones. `penalty` still leads, which is why
+        this compares against blocks of the same penalty rather than all of them.
+        """
+        main = pack(result, facts, minutes, frozenset({"chest"})).section(Section.MAIN)
+        emphasised = [b for b in main if "chest" in b.muscles]
+        assert emphasised
+        for block in emphasised:
+            others = [b.prescription.sets for b in main if b.penalty == block.penalty]
+            assert block.prescription.sets >= max(others)
+
+    def test_an_emphasis_nothing_can_serve_is_reported(self, result, facts) -> None:
+        """Every lat exercise she has needs a bar or a machine she does not own.
+
+        Silence would be indistinguishable from a request that was honoured,
+        which is the failure this whole change is about. The shortfall names the
+        constraint responsible, so the coach can switch it off and try again.
+        """
+        plan = pack(result, facts, 50, frozenset({"lats"}))
+        unserved = kinds(plan, ShortfallKind.FOCUS_UNSERVED)
+        assert [s.detail for s in unserved] == [
+            "nothing in the session trains lats, which the request emphasised"
+        ]
+        assert unserved[0].cause == "missing_equipment"
+
+    def test_an_emphasis_that_was_served_is_not_reported(self, result, facts) -> None:
+        """A shortfall on a request that worked would teach a coach to ignore them."""
+        plan = pack(result, facts, 50, frozenset({"chest"}))
+        assert not kinds(plan, ShortfallKind.FOCUS_UNSERVED)
 
 
 class TestSequencing:

@@ -1,11 +1,11 @@
 from safety.filter import FilterResult
-from safety.policy import Verdict
 
 from plan.families import SLOT_ORDER, role_of
 from plan.prescribe import MAX_SETS, MIN_SETS, SECTION_PLANS, half_up, prescribe
 from plan.why import reasons_for
 from plan.schemas import (
     Block,
+    Candidate,
     MovementFacts,
     Section,
     Shortfall,
@@ -45,31 +45,35 @@ def _clamp(value: int, low: int, high: int) -> int:
     return min(max(value, low), high)
 
 
-def _facts_of(verdict: Verdict, facts: dict[str, MovementFacts]) -> MovementFacts | None:
-    """The catalog facts for a verdict, or None when the graph lacks them."""
-    return facts.get(verdict.exercise_id)
-
-
 def _partition(
-    result: FilterResult, facts: dict[str, MovementFacts]
-) -> tuple[dict[Section, list[Verdict]], list[Shortfall]]:
-    """Split the eligible pool into sections, keeping rank order.
+    result: FilterResult, facts: dict[str, MovementFacts], focus: frozenset[str]
+) -> tuple[dict[Section, list[Candidate]], list[Shortfall]]:
+    """Bundle every cleared movement with what the packer needs to place it.
+
+    The one place a `Candidate` is built, because it is the one place that has
+    established the movement is placeable at all — everything downstream can
+    then take `role` as given rather than re-deriving it and re-handling the
+    None. Pools come out in `Candidate.key` order, which is the only order the
+    packer has: the warmup and cooldown slices, the per-slot lists and the set
+    solver all read it, and sorting once here means there is no second
+    definition of "best first" to keep in step.
 
     Args:
         result: The filter's verdicts for the whole catalog.
         facts: Movement facts by exercise id.
+        focus: Muscles the request asked to emphasise, already resolved.
 
     Returns:
         Candidates per section, best first, and a shortfall for every exercise
         that could not be placed — dropped one at a time rather than failing
         the whole request.
     """
-    pools: dict[Section, list[Verdict]] = {section: [] for section in Section}
+    pools: dict[Section, list[Candidate]] = {section: [] for section in Section}
     shortfalls: list[Shortfall] = []
     for verdict in result.eligible:
-        movement = _facts_of(verdict, facts)
+        movement = facts.get(verdict.exercise_id)
         role = role_of(movement.patterns) if movement else None
-        if role is None:
+        if movement is None or role is None:
             shortfalls.append(
                 Shortfall(
                     kind=ShortfallKind.UNPLACEABLE_EXERCISE,
@@ -77,39 +81,44 @@ def _partition(
                 )
             )
             continue
-        pools[role.section].append(verdict)
+        pools[role.section].append(
+            Candidate(
+                verdict=verdict,
+                movement=movement,
+                role=role,
+                emphasised=tuple(sorted(focus & set(movement.muscles))),
+            )
+        )
+    for pool in pools.values():
+        pool.sort(key=lambda candidate: candidate.key)
     return pools, shortfalls
 
 
-def _fixed_blocks(
-    verdicts: list[Verdict],
-    section: Section,
-    facts: dict[str, MovementFacts],
-    focus: frozenset[str],
-) -> list[Block]:
+def _fixed_blocks(candidates: list[Candidate], section: Section) -> list[Block]:
     """Dose warmup or cooldown, whose set counts are not solved."""
     plan = SECTION_PLANS[section]
-    blocks = []
-    for verdict in verdicts:
-        movement = facts[verdict.exercise_id]
-        role = role_of(movement.patterns)
-        blocks.append(
-            Block(
-                exercise_id=verdict.exercise_id,
-                name=verdict.name,
-                section=section,
-                slot=role.slot,
-                modality=role.modality,
-                prescription=prescribe(movement, role, plan.sets),
-                order=0,
-                penalty=verdict.penalty,
-                fit=verdict.fit,
-                headline=verdict.headline,
-                reasons=reasons_for(verdict, movement, role, focus),
-                **_catalog_fields(movement),
-            )
-        )
-    return blocks
+    return [_block(candidate, section, plan.sets) for candidate in candidates]
+
+
+def _block(candidate: Candidate, section: Section, sets: int, anchored: bool = False) -> Block:
+    """One dosed exercise, wherever it sits in the session."""
+    return Block(
+        exercise_id=candidate.exercise_id,
+        name=candidate.verdict.name,
+        section=section,
+        slot=candidate.role.slot,
+        modality=candidate.role.modality,
+        prescription=prescribe(candidate.movement, candidate.role, sets),
+        order=0,
+        penalty=candidate.verdict.penalty,
+        fit=candidate.verdict.fit,
+        headline=candidate.verdict.headline,
+        anchored=anchored,
+        reasons=reasons_for(
+            candidate.verdict, candidate.movement, candidate.role, candidate.emphasised
+        ),
+        **_catalog_fields(candidate.movement),
+    )
 
 
 def _catalog_fields(movement: MovementFacts) -> dict[str, tuple[str, ...]]:
@@ -161,27 +170,40 @@ def _trim_preparatory(
     return warmup, cooldown, dropped
 
 
-def _slot_order(candidates: list[Verdict], facts: dict[str, MovementFacts]) -> list[Slot]:
+def _by_slot(candidates: list[Candidate]) -> dict[Slot, list[Candidate]]:
+    """Group candidates by slot, keeping the order they arrived in."""
+    grouped: dict[Slot, list[Candidate]] = {}
+    for candidate in candidates:
+        grouped.setdefault(candidate.role.slot, []).append(candidate)
+    return grouped
+
+
+def _slot_order(by_slot: dict[Slot, list[Candidate]]) -> list[Slot]:
     """Deal order for the main block's slots, derived from the member.
 
-    Slots holding the best goal-serving work come first, so a member training
-    for lower-body strength gets a lower-body movement before an accessory
-    one, without an authored preference that would be wrong for the next
-    member.
+    Slots that can serve the emphasis come first, then those holding the best
+    goal-serving work, so a member training for lower-body strength gets a
+    lower-body movement before an accessory one, without an authored preference
+    that would be wrong for the next member.
+
+    The emphasis term is separate from `Candidate.key` and not redundant with
+    it: the round-robin deals one exercise per slot, so a chest movement only
+    makes a three-slot main block if the slot holding it is dealt early.
+    Ordering within a slot cannot reach that.
     """
-    by_slot: dict[Slot, list[Verdict]] = {}
-    for verdict in candidates:
-        slot = role_of(facts[verdict.exercise_id].patterns).slot
-        by_slot.setdefault(slot, []).append(verdict)
     return sorted(
         by_slot,
-        key=lambda slot: (-max(v.fit for v in by_slot[slot]), by_slot[slot][0].sort_key),
+        key=lambda slot: (
+            -max(len(c.emphasised) for c in by_slot[slot]),
+            -max(c.verdict.fit for c in by_slot[slot]),
+            by_slot[slot][0].key,
+        ),
     )
 
 
 def _select_main(
-    candidates: list[Verdict], facts: dict[str, MovementFacts], count: int
-) -> tuple[list[Verdict], Verdict | None]:
+    candidates: list[Candidate], count: int
+) -> tuple[list[Candidate], Candidate | None]:
     """Choose the main block: one goal anchor, then round-robin across slots.
 
     Pure rank alone is not enough. The sample member's only goal-serving
@@ -191,34 +213,40 @@ def _select_main(
     one authored rule against that, and it is recorded on the block rather than
     hidden in a weight.
 
+    The emphasis reaches this through `candidates`, which arrive in
+    `Candidate.key` order, and through the slot deal order. It gets no anchor
+    of its own: the deal order already seats it first among the round-robin
+    picks, and a second authored exception would spend both free slots of a
+    three-slot session on exceptions.
+
     Args:
-        candidates: Eligible main-block verdicts, best first.
-        facts: Movement facts by exercise id.
+        candidates: Eligible main-block candidates, best first by `key`.
         count: How many to select.
 
     Returns:
-        The selection in rank order, and the anchor when one was promoted
+        The selection in `key` order, and the anchor when one was promoted
         ahead of its rank.
     """
     if not candidates or count <= 0:
         return [], None
 
-    chosen: list[Verdict] = []
-    promoted: Verdict | None = None
-    best_fit = max(verdict.fit for verdict in candidates)
+    chosen: list[Candidate] = []
+    promoted: Candidate | None = None
+    best_fit = max(candidate.verdict.fit for candidate in candidates)
     if best_fit > 0:
         # Best goal fit first, ties broken by the safety rank as everywhere else.
-        anchor = min((v for v in candidates if v.fit == best_fit), key=lambda v: v.sort_key)
+        anchor = min(
+            (c for c in candidates if c.verdict.fit == best_fit),
+            key=lambda c: c.verdict.sort_key,
+        )
         chosen.append(anchor)
-        # Only a promotion if rank alone would not have reached it first.
-        promoted = anchor if anchor is not candidates[0] else None
+        # Only a promotion if the pick order would not have reached it first.
+        promoted = anchor if anchor.exercise_id != candidates[0].exercise_id else None
 
-    remaining = [v for v in candidates if v not in chosen]
-    by_slot: dict[Slot, list[Verdict]] = {}
-    for verdict in remaining:
-        by_slot.setdefault(role_of(facts[verdict.exercise_id].patterns).slot, []).append(verdict)
+    taken = {candidate.exercise_id for candidate in chosen}
+    by_slot = _by_slot([c for c in candidates if c.exercise_id not in taken])
 
-    order = _slot_order(remaining, facts) if remaining else []
+    order = _slot_order(by_slot)
     while len(chosen) < count and any(by_slot.values()):
         for slot in order:
             if len(chosen) >= count:
@@ -226,17 +254,16 @@ def _select_main(
             if by_slot.get(slot):
                 chosen.append(by_slot[slot].pop(0))
 
-    chosen.sort(key=lambda v: v.sort_key)
+    # Back into `key` order, which is what `_dose_main` drops from and `_top_up`
+    # spends surplus sets in: the emphasised movement should be the last to lose
+    # its place and the first to gain a set. `penalty` leads the key, so the
+    # cautioned movements are still dropped first and dosed least whatever the
+    # request emphasised.
+    chosen.sort(key=lambda candidate: candidate.key)
     return chosen, promoted
 
 
-def _dose_main(
-    chosen: list[Verdict],
-    facts: dict[str, MovementFacts],
-    budget: int,
-    anchor: Verdict | None,
-    focus: frozenset[str],
-) -> list[Block]:
+def _dose_main(chosen: list[Candidate], budget: int, anchor: Candidate | None) -> list[Block]:
     """Fit the selected main exercises into their budget.
 
     Solves the largest uniform set count that fits, dropping the lowest-ranked
@@ -245,10 +272,9 @@ def _dose_main(
     the least volume, which is the direction a clinician would choose.
 
     Args:
-        chosen: Selected verdicts, best first.
-        facts: Movement facts by exercise id.
+        chosen: Selected candidates, best first.
         budget: Seconds available for the main block.
-        anchor: The goal-anchored verdict, if any.
+        anchor: The goal-anchored candidate, if any.
 
     Returns:
         The dosed blocks, best first.
@@ -256,47 +282,24 @@ def _dose_main(
     working = list(chosen)
     while working:
         for sets in range(MAX_SETS, MIN_SETS - 1, -1):
-            blocks = [_main_block(v, facts, sets, anchor, focus) for v in working]
+            blocks = [_main_block(candidate, sets, anchor) for candidate in working]
             if _cost(blocks) <= budget:
-                return _top_up(blocks, working, facts, budget, anchor, focus)
+                return _top_up(blocks, working, budget, anchor)
         working.pop()
     return []
 
 
-def _main_block(
-    verdict: Verdict,
-    facts: dict[str, MovementFacts],
-    sets: int,
-    anchor: Verdict | None,
-    focus: frozenset[str],
-) -> Block:
-    """One dosed main-block exercise."""
-    movement = facts[verdict.exercise_id]
-    role = role_of(movement.patterns)
-    return Block(
-        exercise_id=verdict.exercise_id,
-        name=verdict.name,
-        section=Section.MAIN,
-        slot=role.slot,
-        modality=role.modality,
-        prescription=prescribe(movement, role, sets),
-        order=0,
-        penalty=verdict.penalty,
-        fit=verdict.fit,
-        headline=verdict.headline,
-        anchored=anchor is not None and verdict.exercise_id == anchor.exercise_id,
-        reasons=reasons_for(verdict, movement, role, focus),
-        **_catalog_fields(movement),
-    )
+def _main_block(candidate: Candidate, sets: int, anchor: Candidate | None) -> Block:
+    """One dosed main-block exercise, told whether it is the goal anchor."""
+    anchored = anchor is not None and candidate.exercise_id == anchor.exercise_id
+    return _block(candidate, Section.MAIN, sets, anchored)
 
 
 def _top_up(
     blocks: list[Block],
-    chosen: list[Verdict],
-    facts: dict[str, MovementFacts],
+    chosen: list[Candidate],
     budget: int,
-    anchor: Verdict | None,
-    focus: frozenset[str],
+    anchor: Candidate | None,
 ) -> list[Block]:
     """Spend leftover budget one set at a time, cycling best-ranked first.
 
@@ -311,11 +314,11 @@ def _top_up(
     added = True
     while added:
         added = False
-        for index, verdict in enumerate(chosen):
+        for index, candidate in enumerate(chosen):
             if result[index].prescription.sets >= MAX_SETS:
                 continue
-            candidate = _main_block(verdict, facts, result[index].prescription.sets + 1, anchor, focus)
-            trial = result[:index] + [candidate] + result[index + 1 :]
+            dosed = _main_block(candidate, result[index].prescription.sets + 1, anchor)
+            trial = result[:index] + [dosed] + result[index + 1 :]
             if _cost(trial) <= budget:
                 result = trial
                 added = True
@@ -340,12 +343,12 @@ def _sequence(blocks: list[Block]) -> list[Block]:
 
 
 def _shortfalls(
-    pools: dict[Section, list[Verdict]],
+    pools: dict[Section, list[Candidate]],
     blocks: list[Block],
     budget: TimeBudget,
     result: FilterResult,
     trimmed: list[str],
-    facts_by_id: dict[str, MovementFacts],
+    focus: frozenset[str],
 ) -> list[Shortfall]:
     """Everything the request asked for that the plan could not supply."""
     found: list[Shortfall] = []
@@ -393,10 +396,7 @@ def _shortfalls(
     # Against the eligible pool, not the schedule. A slot the session had no
     # room for is a short session; a slot nothing in the catalog can fill for
     # this member is a constraint, and only the second is worth reporting.
-    coverable = {
-        role_of(facts_by_id[verdict.exercise_id].patterns).slot
-        for verdict in pools[Section.MAIN]
-    }
+    coverable = {candidate.role.slot for candidate in pools[Section.MAIN]}
     for slot in MAIN_SLOTS:
         if slot not in coverable:
             found.append(
@@ -413,6 +413,20 @@ def _shortfalls(
             Shortfall(
                 kind=ShortfallKind.NO_GOAL_SERVING_BLOCK,
                 detail="no eligible exercise serves a stated goal",
+                cause=cause,
+            )
+        )
+
+    # Against the schedule rather than the eligible pool, which is the opposite
+    # of the slot rule above: a coach who asked for chest work and did not get
+    # it is owed that fact whether the cause was the filter or the window.
+    scheduled_muscles = {muscle for block in blocks for muscle in block.muscles}
+    for muscle in sorted(focus - scheduled_muscles):
+        found.append(
+            Shortfall(
+                kind=ShortfallKind.FOCUS_UNSERVED,
+                detail=f"nothing in the session trains {muscle}, which the request emphasised",
+                muscle=muscle,
                 cause=cause,
             )
         )
@@ -446,7 +460,8 @@ def pack(
     Deterministic throughout: the inputs are the ranked verdicts, the catalog
     facts and the authored tables, so two runs over the same graph produce the
     same plan. Nothing here judges safety — every candidate has already been
-    cleared, and the ranking that cleared it decides who is chosen.
+    cleared, and `Candidate.key` orders what survives without ever reordering
+    across the filter's own penalty.
 
     Args:
         result: The filter's verdicts for the whole catalog.
@@ -458,26 +473,22 @@ def pack(
         The session, the time arithmetic, and every gap between the two.
     """
     window = minutes * 60
-    pools, shortfalls = _partition(result, facts)
+    pools, shortfalls = _partition(result, facts, focus)
 
     warmup = _fixed_blocks(
         pools[Section.WARMUP][: _clamp(half_up(minutes / WARMUP_MINUTES_PER_ITEM), 2, 5)],
         Section.WARMUP,
-        facts,
-        focus,
     )
     cooldown = _fixed_blocks(
         pools[Section.COOLDOWN][: _clamp(half_up(minutes / COOLDOWN_MINUTES_PER_ITEM), 2, 4)],
         Section.COOLDOWN,
-        facts,
-        focus,
     )
     warmup, cooldown, trimmed = _trim_preparatory(warmup, cooldown, window)
 
     main_budget = max(0, window - _cost(warmup) - _cost(cooldown))
     slots = _clamp(main_budget // NOMINAL_MAIN_SECONDS, MIN_MAIN_SLOTS, MAX_MAIN_SLOTS)
-    chosen, anchor = _select_main(pools[Section.MAIN], facts, slots)
-    main = _dose_main(chosen, facts, main_budget, anchor, focus)
+    chosen, anchor = _select_main(pools[Section.MAIN], slots)
+    main = _dose_main(chosen, main_budget, anchor)
 
     blocks = _sequence(warmup) + _sequence(main) + _sequence(cooldown)
     budget = TimeBudget(
@@ -487,7 +498,7 @@ def pack(
         cooldown_seconds=_cost(cooldown),
         scheduled_seconds=_cost(blocks),
     )
-    shortfalls += _shortfalls(pools, blocks, budget, result, trimmed, facts)
+    shortfalls += _shortfalls(pools, blocks, budget, result, trimmed, focus)
 
     notes = (PER_SIDE_NOTE,) if any(b.prescription.per_side for b in blocks) else ()
     return WorkoutPlan(

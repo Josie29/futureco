@@ -1,8 +1,8 @@
 # Worked examples
 
-Real output, not illustrations. The first two come from `plan.probe`, which is the generator with no model in it — so they are byte-reproducible on any machine, with or without an API key. The third runs against the live extractor and shows the three interactive-adjustment scenarios `ASSESSMENT.md:27-31` asks for, as one conversation.
+Real output, not illustrations. The first three come from `plan.probe`, which is the generator with no model in it — so they are byte-reproducible on any machine, with or without an API key. The fourth runs against the live extractor and shows the three interactive-adjustment scenarios `ASSESSMENT.md:27-31` asks for, as one conversation.
 
-`plan.probe` is the generator with no model in it. Both examples below are its real output.
+`plan.probe` is the generator with no model in it. The examples below are its real output.
 
 ```bash
 cd backend
@@ -33,6 +33,28 @@ The caution is a clinician's sentence from `contraindications.json`, quoted, not
 ```
 
 A stand-in can only ever be a movement the filter already cleared, and must share the dropped one's *primary* pattern — so no substitution can route around a contraindication.
+
+**The emphasis case** — *"isolation work around her pecs"*, which is the one request in `ASSESSMENT.md:23` that widens rather than narrows. Nothing is excluded and nothing is added to the pool: 33 removed and 17 kept, exactly as with no emphasis. All that changes is the order the packer picks in.
+
+```bash
+PYTHONPATH=src uv run python -m plan.probe --minutes 45 --emphasis pecs
+```
+
+```
+emphasis        'pecs' -> chest
+
+  3 x 15                   Alternating Dumbbell Overhead Press     <- without the emphasis
+  2 x 9                    Dumbbell Neutral-Grip Bench Press
+
+  3 x 9                    Dumbbell Neutral-Grip Bench Press       <- with it
+      focus_match        trains chest, which the request asked to emphasise
+  3 x 15                   Push-Up to Knee-Drive
+      focus_match        trains chest, which the request asked to emphasise
+```
+
+The upper-push slot has two places and by rank alone it spends one of them on a shoulder press. The emphasis is a term in the packer's selection key, ordered *after* the filter's penalty and *before* the member's standing goals — so it decides which of two cleared movements is programmed, and can decide nothing else. It reaches volume as well as selection: the bench press goes from two sets to three, because surplus sets are spent in the same order.
+
+Both cautioned lower-body movements are still in the session, still carrying the clinician's sentence, and the anchored lunge is still anchored. A coach who emphasises `quads` instead — where her only quad work is her three cautioned movements — gets the identical plan, because `penalty` leads the key and no request can reorder across it. An emphasis nothing eligible can serve is reported rather than absorbed: `--emphasis lats` returns a `focus_unserved` shortfall naming the equipment limit that removed every lat movement she has.
 
 **The refinement case** — the three scenarios from `ASSESSMENT.md:27-31` as one conversation, against the live extractor. Real output, one `curl` per step.
 

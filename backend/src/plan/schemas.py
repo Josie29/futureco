@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from safety.evidence import EvidencePath, Signal
 from safety.filter import Attribution
+from safety.policy import Verdict
 
 
 class Section(StrEnum):
@@ -148,6 +149,69 @@ class MovementFacts(BaseModel):
         return not self.is_bilateral
 
 
+class Candidate(BaseModel):
+    """One cleared movement, as this request sees it.
+
+    The packer needs four things about every exercise it considers: the
+    filter's verdict, the catalog row, where the family table places it, and
+    what it trains of whatever the coach asked to emphasise. Those travelled
+    separately through nine functions, each re-deriving `facts[exercise_id]`
+    and `role_of(patterns)` on arrival. Bundled once, in `pack._partition`,
+    which is the one place all four are already in hand — and the one place
+    that has established the movement is placeable at all.
+
+    Composed rather than subclassed, so a `Verdict` stays exactly the filter's
+    to define and nothing here can quietly widen it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    verdict: Verdict
+    movement: MovementFacts
+    role: FamilyRole
+    emphasised: tuple[str, ...] = ()
+    """Muscles this movement trains that the request asked to emphasise.
+
+    Sorted and deduplicated. A count would be enough to rank on, but the block
+    has to name them, and computing the overlap twice is how the ranking and
+    the explanation drift apart.
+    """
+
+    @property
+    def exercise_id(self) -> str:
+        """The catalog id, which the verdict and the facts agree on."""
+        return self.verdict.exercise_id
+
+    @property
+    def key(self) -> tuple[int, int, int, str]:
+        """Selection order inside the eligible pool.
+
+        Safety first, then what this request asked to emphasise, then the goals
+        the member's record already carries, then name for a total order.
+
+        Deliberately not `Verdict.sort_key`. That ranks *risk* and belongs to
+        the filter; this ranks *preference* among movements the filter has
+        already cleared. `penalty` leads, so no amount of emphasis moves a
+        cautioned movement ahead of a clean one — which is the whole reason
+        emphasis is allowed to act here rather than inside the filter.
+
+        Emphasis precedes `fit` because the two say different things: `fit` is
+        what the member's chart has always wanted, emphasis is what the coach
+        asked for today. The goal anchor in `pack._select_main` still runs
+        first, so a request cannot crowd the chart out.
+
+        With nothing emphasised the middle term is 0 for every candidate and
+        this is `sort_key` exactly — a `Candidate` only ever wraps an eligible
+        verdict, where `Status.PENALIZED` is precisely `penalty > 0`.
+        """
+        return (
+            self.verdict.penalty,
+            -len(self.emphasised),
+            -self.verdict.fit,
+            self.verdict.name,
+        )
+
+
 class Prescription(BaseModel):
     """Sets, reps or hold, and rest for one exercise in one section.
 
@@ -237,6 +301,14 @@ class ShortfallKind(StrEnum):
     SECTION_TRIMMED = "section_trimmed"
     SLOT_ABSENT = "slot_absent"
     NO_GOAL_SERVING_BLOCK = "no_goal_serving_block"
+    FOCUS_UNSERVED = "focus_unserved"
+    """An emphasis resolved onto a muscle, and nothing scheduled trains it.
+
+    Distinct from an emphasis that never resolved, which the resolver reports:
+    this one was understood and still could not be honoured, usually because
+    the constraint that removed the movements is the same one that thinned the
+    pool. Silence here would look identical to a request that was applied."""
+
     PACE_IMPLAUSIBLE = "pace_implausible"
     UNPLACEABLE_EXERCISE = "unplaceable_exercise"
 
@@ -255,6 +327,11 @@ class Shortfall(BaseModel):
     detail: str
     section: Section | None = None
     slot: Slot | None = None
+    muscle: str | None = None
+    """What `FOCUS_UNSERVED` could not train, named structurally rather than
+    only in `detail`, for the same reason `slot` is: a consumer should not have
+    to parse a sentence to find out which request went unanswered."""
+
     seconds: int = 0
     cause: str | None = None
     """`FilterResult.costliest_constraint` where the eligible pool is the

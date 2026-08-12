@@ -123,26 +123,31 @@ class TestSafetyClaim:
 
 
 class TestFocus:
-    """Muscles the request asked to emphasise."""
+    """Muscles the request asked to emphasise.
 
-    def test_a_focus_match_is_reported_when_the_muscle_is_trained(
-        self, result, facts
-    ) -> None:
+    *Which* muscles those are is `Candidate.emphasised`, decided by the packer
+    where it also drives the ranking — `test_plan_pack.TestEmphasis` covers
+    that. What is left here is the rendering: the reason has to name the muscle
+    and walk the edge that justifies it, or the block claims an emphasis it
+    cannot show.
+    """
+
+    def test_the_matched_muscle_is_named_and_walked_to(self, result, facts) -> None:
         """The spec's first example prompt asks for work around the pecs.
 
-        Without this the request resolves, changes nothing, and says nothing —
-        which reads as the emphasis having been ignored.
+        Without this the request resolves, reorders the session, and says
+        nothing on the movements it moved — which reads as coincidence.
         """
         found = reasons(
-            result, facts, "Dumbbell Neutral-Grip Bench Press", focus=frozenset({"chest"})
+            result, facts, "Dumbbell Neutral-Grip Bench Press", emphasised=("chest",)
         )
-        assert ReasonKind.FOCUS_MATCH in kinds(found)
+        match = next(r for r in found if r.kind is ReasonKind.FOCUS_MATCH)
+        assert "chest" in match.detail
+        assert match.path.hops[-1].to_name == "chest"
 
-    def test_no_focus_match_when_the_muscle_is_absent(self, result, facts) -> None:
-        """An emphasis must not be claimed by movements that do not serve it."""
-        found = reasons(
-            result, facts, "Dumbbell Goblet Split Squat", focus=frozenset({"chest"})
-        )
+    def test_nothing_emphasised_claims_nothing(self, result, facts) -> None:
+        """The default case, and every block in a plan built from no emphasis."""
+        found = reasons(result, facts, "Dumbbell Goblet Split Squat")
         assert ReasonKind.FOCUS_MATCH not in kinds(found)
 
 

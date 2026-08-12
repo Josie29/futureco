@@ -106,8 +106,14 @@ def _pattern_role(facts: MovementFacts, role: FamilyRole, name: str) -> Reason:
     )
 
 
-def _focus_match(facts: MovementFacts, name: str, focus: frozenset[str]) -> list[Reason]:
-    """Muscles the coach asked for that this movement actually trains."""
+def _focus_match(name: str, emphasised: tuple[str, ...]) -> list[Reason]:
+    """Muscles the coach asked for that this movement actually trains.
+
+    Handed the overlap rather than working it out, because the same overlap
+    ranked the movement in the first place (`Candidate.emphasised`). Computing
+    it twice is how a block comes to be chosen for a muscle it does not claim
+    to train, or to claim one it was not chosen for.
+    """
     return [
         Reason(
             kind=ReasonKind.FOCUS_MATCH,
@@ -117,7 +123,7 @@ def _focus_match(facts: MovementFacts, name: str, focus: frozenset[str]) -> list
                 hops=(Hop(rel=RelType.TARGETS, to_label=NodeLabel.MUSCLE, to_name=muscle),),
             ),
         )
-        for muscle in sorted(focus & set(facts.muscles))
+        for muscle in emphasised
     ]
 
 
@@ -125,7 +131,7 @@ def reasons_for(
     verdict: Verdict,
     facts: MovementFacts,
     role: FamilyRole,
-    focus: frozenset[str] = frozenset(),
+    emphasised: tuple[str, ...] = (),
 ) -> tuple[Reason, ...]:
     """Everything there is to say about one programmed movement.
 
@@ -139,7 +145,8 @@ def reasons_for(
         verdict: The filter's judgement, carrying any signals against it.
         facts: The catalog facts for this exercise.
         role: Where the family table placed it.
-        focus: Muscles the request asked to emphasise.
+        emphasised: Muscles this exercise trains that the request asked to
+            emphasise, already intersected by the packer.
 
     Returns:
         The reasons, safety first. Ordering for display is the console's job.
@@ -148,7 +155,7 @@ def reasons_for(
     if not (verdict.of(SignalKind.CONTRAINDICATION) or verdict.of(SignalKind.CAUTION)):
         reasons.append(_cleared(verdict.name))
     reasons += _goal_service(facts)
-    reasons += _focus_match(facts, verdict.name, focus)
+    reasons += _focus_match(verdict.name, emphasised)
     reasons.append(_equipment_fit(facts, verdict.name))
     reasons.append(_pattern_role(facts, role, verdict.name))
     return tuple(reasons)

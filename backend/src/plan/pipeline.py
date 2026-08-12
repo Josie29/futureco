@@ -58,7 +58,10 @@ def resolve_focus(resolver: Resolver, phrases: tuple[str, ...]) -> tuple[Resolut
     Emphasis is deliberately not a `ConstraintKind`. All five of those narrow
     the catalog, and adding a sixth that widens it would put goal fit into the
     safety filter, which `decisions.md` promises it is subordinate to. It acts
-    on the packer's tie-break instead.
+    on the packer's selection order instead — `Candidate.key`, which ranks
+    inside the pool the filter already cleared and never across its penalty.
+    So an emphasis can decide which of two safe movements is programmed, and
+    cannot decide anything else.
 
     Args:
         resolver: The concept resolver, over the graph's vocabulary.

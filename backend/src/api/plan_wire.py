@@ -14,7 +14,7 @@ from api.plan_models import (
     VerdictLabel,
 )
 from plan.pipeline import GeneratedPlan
-from plan.schemas import Block, ReasonKind, Section
+from plan.schemas import Block, ReasonKind, Section, ShortfallKind
 from resolve.resolver import Resolution, Thresholds
 from safety.constraints import ConstraintKind, Directive, Op
 from safety.evidence import EvidencePath, SignalKind
@@ -272,6 +272,34 @@ def payload(
         )
         for resolution in generated.focus
         if resolution.match is None
+    ]
+    # An emphasis that resolved and still reached nothing. Reported beside the
+    # ones that never resolved because to a coach they are the same
+    # disappointment, and the alternative — a resolved concept in `resolved`
+    # with no movement carrying a `focus_match` reason — asks them to notice an
+    # absence. The muscle is named, so the two cases still read apart.
+    #
+    # Read off the packer's own shortfall rather than recomputed from the
+    # blocks: whether the session served a muscle is the packer's finding, and
+    # a second definition here would be free to drift from the one the plan
+    # reports internally.
+    unserved = {
+        shortfall.muscle
+        for shortfall in generated.plan.shortfalls
+        if shortfall.kind is ShortfallKind.FOCUS_UNSERVED
+    }
+    unresolved += [
+        UnresolvedPhrase(
+            phrase=resolution.term,
+            best_guess=resolution.match.name,
+            confidence=resolution.match.score,
+            threshold=0.0,
+            fallback=(
+                f"resolved to {resolution.match.name}, but nothing in this session trains it"
+            ),
+        )
+        for resolution in generated.focus
+        if resolution.match and resolution.match.name in unserved
     ]
     # Heard but not classifiable — never resolved, so there is no near-miss to
     # show. Reported beside the declines because to a coach they are the same

@@ -160,12 +160,31 @@ class TestEmphasis:
         """"Isolation around my pecs" must visibly do something.
 
         Emphasis is not a `ConstraintKind` — it widens rather than narrows, so
-        it acts on the packer's tie-break. That makes it easy for it to change
-        nothing at all and say nothing either.
+        it acts on the packer's selection order instead. The gym term has to
+        survive the whole path: extraction hands over "pecs", the alias file
+        carries it to `chest`, and the packer ranks on the canonical name.
         """
         generated = build(session, resolver, emphasis=("pecs",))
         assert [r.match.name for r in generated.focus] == ["chest"]
         assert ReasonKind.FOCUS_MATCH in reason_kinds(generated)
+
+    def test_an_emphasis_changes_which_movements_are_programmed(
+        self, session, resolver
+    ) -> None:
+        """The reason line is not the feature.
+
+        Emphasis used to reach `why.reasons_for` and stop there, so a plan
+        could carry a `focus_match` on a movement chosen for other reasons and
+        contain no more of the asked-for work than a plan with no emphasis at
+        all. A coach reading that would have every reason to think it applied.
+        """
+        baseline = build(session, resolver)
+        emphasised = build(session, resolver, emphasis=("pecs",))
+        assert {b.exercise_id for b in emphasised.plan.blocks} != {
+            b.exercise_id for b in baseline.plan.blocks
+        }
+        chest = [b for b in emphasised.plan.blocks if "chest" in b.muscles]
+        assert len(chest) > len([b for b in baseline.plan.blocks if "chest" in b.muscles])
 
     def test_an_unresolved_emphasis_is_carried_rather_than_dropped(
         self, session, resolver
