@@ -8,9 +8,8 @@ from resolver.core import resolve
 from resolver.models import Namespace, ResolutionResult, ResolvedConcept
 
 CONFIRM_CONFIDENCE = 0.85
-"""Tool-layer gate, distinct from the resolver's own acceptance thresholds:
-above it a match is returned as settled; below it the model is told to judge.
-To be swept once a resolver eval set exists again."""
+"""Above this a match is returned as settled; below it the model is told to
+judge. Distinct from the resolver's own acceptance thresholds."""
 
 
 class AltConcept(BaseModel):

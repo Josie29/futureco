@@ -7,13 +7,9 @@ from settings import settings
 
 
 class WorkoutPlan(BaseModel):
-    """The agent's typed output. Placeholder shape.
-
-    To be respecified before the composition phase: slots with per-slot
-    model-authored rationale citing tool-result ids, section structure, and
-    the caution flags the safety validator requires. The pre-migration domain
-    model (main: backend/src/plan/schemas.py) is the reference, not the spec.
-    """
+    """The agent's typed output. Placeholder shape until the composition
+    phase; the pre-migration model (main: backend/src/plan/schemas.py) is
+    the reference, not the spec."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -33,11 +29,8 @@ cautions need an explicit coach-facing flag; cite tool results in rationale.
 
 
 MODEL = f"anthropic:{settings.anthropic_model}"
-"""Passed at run time — `generator.run(..., model=MODEL)` — never bound at
-construction: the Anthropic provider demands an API key the moment a model is
-attached, and importing this module must not require one. Keyless behaviour
-(replay, degraded mode) is the runner's decision, made where the key check
-belongs."""
+"""Passed at run time, never bound at construction: attaching a model demands
+an API key, and importing this module must not require one."""
 
 
 generator = Agent(
@@ -50,22 +43,18 @@ generator = Agent(
 
 @generator.output_validator
 def enforce_safety(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
-    """Deterministic safety re-filter over the final plan.
-
-    Any blocked exercise fails the run with its evidence path via ModelRetry,
-    regardless of the model's rationale; a caution without an explicit coach
-    flag fails too. Lands with the rebuilt safety package.
+    """Deterministic safety re-filter: a blocked exercise fails the run via
+    ModelRetry with its evidence path; a caution without a coach flag fails too.
 
     Raises:
-        NotImplementedError: Scaffolding; not implemented yet.
+        NotImplementedError: Scaffolding; lands with the rebuilt safety package.
     """
     raise NotImplementedError
 
 
 @generator.output_validator
 def enforce_time_budget(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
-    """Sets x rest x transitions must fit the requested window — arithmetic,
-    not search. What remains of pack.py.
+    """Sets x rest x transitions must fit the requested window.
 
     Raises:
         NotImplementedError: Scaffolding; not implemented yet.
@@ -76,8 +65,7 @@ def enforce_time_budget(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Wo
 @generator.output_validator
 def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
     """Every concept id in the plan must have been returned by a tool call
-    this run — the allowlist check. The model cannot name an exercise it was
-    never shown, even a real one.
+    this run — the model cannot name an exercise it was never shown.
 
     Raises:
         NotImplementedError: Scaffolding; not implemented yet.

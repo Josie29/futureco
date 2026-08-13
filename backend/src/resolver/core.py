@@ -12,11 +12,7 @@ MAX_CANDIDATES = 5
 
 
 class Thresholds(BaseModel):
-    """Acceptance floors for the non-exact passes.
-
-    Defaults carry over from the pre-migration calibration sweep. Injectable
-    so a future sweep can re-derive them against a rebuilt eval set.
-    """
+    """Acceptance floors for the non-exact passes; injectable for calibration."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -39,12 +35,9 @@ def resolve(
 ) -> ResolutionResult:
     """Resolve one free-text term onto a canonical concept: the 3-pass core.
 
-    Pass order is exact (normalised lexical, score 1.0), then fuzzy token-set
-    ratio, then embedding cosine — stopping at the first pass with candidates
-    above threshold. A top-two margin inside `thresholds.ambiguity_margin`
-    declines rather than guesses; the tie comes back as alternatives with no
-    top pick. Deterministic, and a pure function of KG1: same term, same
-    index, same result.
+    Exact, then fuzzy, then vector, stopping at the first pass with
+    candidates above threshold; a top-two tie inside the ambiguity margin
+    declines with alternatives instead of guessing. Pure function of KG1.
 
     Args:
         term: The free-text mention to resolve.
@@ -53,9 +46,8 @@ def resolve(
         thresholds: Acceptance floors; defaults to the calibrated set.
 
     Returns:
-        The resolution with ranked alternatives, decided or declined. A
-        declined resolve still ranks fuzzy near-misses, so a caller can ask
-        "did you mean...?" instead of dead-ending.
+        The resolution, decided or declined; a decline still ranks fuzzy
+        near-misses.
     """
     accept = thresholds or Thresholds()
     surface = norm(term)
@@ -91,12 +83,7 @@ def _thresholded(scored: list[ResolvedConcept], floor: float) -> list[ResolvedCo
 
 
 def _ambiguous(candidates: list[ResolvedConcept], margin: float) -> bool:
-    """Whether the top two candidates are too close to choose between.
-
-    Applies regardless of namespace: a cross-namespace tie means the term is
-    underdetermined in kind, a same-namespace tie in degree. Neither is a
-    choice the resolver can make honestly.
-    """
+    """Whether the top two candidates are too close to choose between."""
     if len(candidates) < 2:
         return False
     return candidates[0].confidence - candidates[1].confidence < margin

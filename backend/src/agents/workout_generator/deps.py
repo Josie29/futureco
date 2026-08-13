@@ -20,11 +20,9 @@ class ProvenanceKind(StrEnum):
 class ProvenanceEvent(BaseModel):
     """One decision the run made, recorded as it happened.
 
-    The tool log is the plan's provenance: every tool call appends here, and
-    the finished plan's trace is assembled from these events rather than
-    reconstructed afterwards. Fields beyond `kind` are per-kind; optional so
-    one event type serves the whole belt until the shapes firm up enough to
-    split into a union.
+    Every tool call appends here; the plan's trace is assembled from these
+    events. Fields beyond `kind` are per-kind and optional until the shapes
+    firm up enough to split into a union.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -42,17 +40,15 @@ class ProvenanceEvent(BaseModel):
 class GeneratorDeps:
     """Everything one generation run carries that isn't conversation.
 
-    Grows with the build-up: the safety envelope (rebuilt only through the
-    declare-constraints tool) and standing constraints land here once the
-    safety package is respecified.
+    The safety envelope and standing constraints land here once the safety
+    package is respecified.
     """
 
     member_id: str
     duration_min: int
     graph: Session
-    """Read-only in effect: every tool runs module-constant Cypher with typed
-    args. No tool signature accepts a query string — enforced by test once
-    tools exist."""
+    """Read-only in effect: tools run module-constant Cypher with typed args,
+    never a query string."""
 
     concept_index: ConceptIndex
     tool_log: list[ProvenanceEvent] = field(default_factory=list)

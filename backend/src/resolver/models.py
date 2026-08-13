@@ -7,13 +7,7 @@ from graph.vocabulary import Pass
 
 
 class Namespace(StrEnum):
-    """Which slice of KG1 a term is being resolved against.
-
-    A namespace is the resolver's unit of scope: a call site that knows it is
-    resolving a muscle should never receive an equipment match. Member, Goal,
-    Injury and Condition are deliberately absent — they identify one person's
-    records rather than terms anyone would type.
-    """
+    """Which slice of KG1 a term is being resolved against."""
 
     EXERCISE = "exercise"
     MUSCLE = "muscle"
@@ -41,22 +35,12 @@ LABEL_TO_NAMESPACE: dict[NodeLabel, Namespace] = {
 UNRESOLVABLE_KG1_LABELS: frozenset[NodeLabel] = frozenset(
     {NodeLabel.INJURY, NodeLabel.CONDITION}
 )
-"""KG1 labels deliberately outside every namespace: clinical records a
-coach's free text must never resolve onto. Every KG1 label must appear in
-NAMESPACE_LABELS or here — a test holds the partition, so adding a node type
-forces the decision."""
+"""Clinical labels coach text must never resolve onto. Every KG1 label goes
+in NAMESPACE_LABELS or here; a test holds the partition."""
 
 
 def make_concept_id(namespace: Namespace, name: str) -> str:
-    """The stable identifier graph tools accept in place of raw text.
-
-    Args:
-        namespace: The concept's namespace.
-        name: The canonical node name.
-
-    Returns:
-        An id of the form ``namespace:name``, reversible by one split.
-    """
+    """The stable ``namespace:name`` identifier graph tools accept in place of raw text."""
     return f"{namespace.value}:{name}"
 
 
@@ -66,33 +50,27 @@ class ResolvedConcept(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     concept_id: str
-    """Stable identifier for the KG1 node. Graph tools accept these and never
-    raw text — the id is the contract between the resolver and every other
-    tool."""
+    """Stable KG1 identifier — graph tools accept these, never raw text."""
 
     label: str
-    """The canonical human-readable name, for the coach and the rationale."""
+    """The canonical human-readable name."""
 
     namespace: Namespace
     method: Pass
-    """Which pass matched: exact, alias, fuzzy or vector."""
+    """Which pass matched."""
 
     confidence: float
-    """1.0 for exact/alias; the pass score otherwise."""
+    """1.0 for exact; the pass score otherwise."""
 
     matched_via: str | None = None
-    """The surface that actually hit — the canonical name, the authored alias
-    term, or the scored form — so provenance says which words carried it."""
+    """The surface that actually hit, so provenance says which words carried it."""
 
 
 class ResolutionResult(BaseModel):
     """Everything one resolution attempt produced, decided or not.
 
-    `resolved` present with high confidence is a clean match; present with low
-    confidence is a shaky one the caller must judge; absent means either an
-    undecidable tie (strong `alternatives`) or nothing above threshold (weak
-    ones). The tool layer folds this into the three-status output the model
-    sees.
+    `resolved` absent means an undecidable tie (strong `alternatives`) or
+    nothing above threshold (weak ones).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -105,6 +83,4 @@ class ResolutionResult(BaseModel):
 
     resolved: ResolvedConcept | None = None
     alternatives: tuple[ResolvedConcept, ...] = ()
-    """Ranked near-misses, best first. Populated in every status: a clean
-    match keeps its runners-up so ambiguity is judged by the caller, not
-    hidden by the resolver."""
+    """Ranked runners-up, best first, populated in every status."""

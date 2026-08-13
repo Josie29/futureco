@@ -32,14 +32,10 @@ class _Entry(BaseModel):
 
 
 class ConceptIndex:
-    """The in-memory search structure the resolver runs against.
+    """In-memory, namespaced search structure over KG1's canonical names.
 
-    Built once per process from KG1's canonical names, namespaced from the
-    start: each namespace has its own surface map and embedding matrix, so a
-    scoped lookup never scans concepts the call site ruled out. Vocabulary
-    bridging (a coach's "pecs" for the catalog's "chest") is the calling
-    model's job, guided by the tool's unresolved near-misses — not an
-    authored alias layer here.
+    Built once per process. Vocabulary bridging ("pecs" for "chest") is the
+    calling model's job, not an alias layer here.
     """
 
     def __init__(self, entries: list[_Entry]) -> None:
@@ -90,7 +86,7 @@ class ConceptIndex:
 
         Returns:
             Every concept named, all at confidence 1.0 — more than one is a
-            tie the caller must decline.
+            tie for the caller to decline.
         """
         return [
             self._hit(entry, Pass.EXACT, 1.0, entry.name)
@@ -101,17 +97,13 @@ class ConceptIndex:
     def fuzzy(self, surface: str, namespace: Namespace | None) -> list[ResolvedConcept]:
         """Every in-scope concept scored by token-set ratio, best first.
 
-        `token_set_ratio` rather than a plain ratio: canonical names are
-        multi-word, so a coach's single word must score against the token it
-        shares rather than against the whole string.
-
         Args:
             surface: Normalised query text.
             namespace: Scope, or None for every namespace.
 
         Returns:
-            All candidates with scores in [0, 1], unthresholded — the caller
-            owns acceptance.
+            All candidates, scores in [0, 1], unthresholded — the caller owns
+            acceptance.
         """
         pool = [e for ns in self._spaces(namespace) for e in self._entries[ns]]
         matches = process.extract(
@@ -129,15 +121,13 @@ class ConceptIndex:
     def vector(self, surface: str, namespace: Namespace | None) -> list[ResolvedConcept]:
         """Every in-scope concept scored by embedding cosine, best first.
 
-        The pass that reaches meaning rather than spelling.
-
         Args:
             surface: Normalised query text.
             namespace: Scope, or None for every namespace.
 
         Returns:
-            All candidates with cosine scores, unthresholded — the caller
-            owns acceptance.
+            All candidates with cosine scores, unthresholded — the caller owns
+            acceptance.
         """
         query = next(iter(self._embedder.embed([surface])))
         query = query / np.linalg.norm(query)
@@ -170,11 +160,7 @@ class ConceptIndex:
 
     @cached_property
     def _embedder(self):  # noqa: ANN202 - fastembed's type is an implementation detail
-        """The embedding model, loaded on first vector lookup.
-
-        Lazy because most terms never reach the vector pass — exact and fuzzy
-        resolution work with no model in memory at all.
-        """
+        """The embedding model, loaded lazily on first vector lookup."""
         from fastembed import TextEmbedding
 
         cache_dir = settings.model_cache_dir

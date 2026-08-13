@@ -13,12 +13,8 @@ from settings import settings
 
 
 class Pass(StrEnum):
-    """Which pass matched a surface onto the vocabulary.
-
-    Lived in the resolver before the agentic migration; moved here with the
-    vocabulary because build-time mention scanning shares it, and the rebuilt
-    resolver tool will too. Mentions only ever use EXACT and ALIAS.
-    """
+    """Which pass matched a surface onto the vocabulary. Shared by the
+    resolver and build-time mention scanning, which only uses EXACT/ALIAS."""
 
     EXACT = "exact"
     ALIAS = "alias"
