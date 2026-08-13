@@ -34,34 +34,10 @@ class PlanRun(BaseModel):
     emphasis: tuple[str, ...] = ()
 
 
-def accumulate(
-    parent: PlanRun | None, instructions: tuple[Instruction, ...], emphasis: tuple[str, ...]
-) -> tuple[tuple[Instruction, ...], tuple[str, ...]]:
-    """Fold a new utterance onto the run it refines.
-
-    Order is load-bearing and the parent's come first: `safety.constraints
-    .compose` applies directives in sequence, so the later utterance is the one
-    that wins where the two disagree. Appending is therefore the whole of
-    "refine rather than replace".
-
-    Emphasis is deduplicated because it is a set in effect — it moves the
-    packer's tie-break, and naming the same muscle twice does not move it
-    twice — while instructions are not, since two identical directives can
-    legitimately arrive from different utterances and the fold is idempotent
-    for them anyway.
-
-    Args:
-        parent: The run being refined, or None for a fresh build.
-        instructions: What this utterance asked for.
-        emphasis: Muscles this utterance asked to emphasise.
-
-    Returns:
-        The accumulated instructions and emphasis, in fold order.
-    """
-    if parent is None:
-        return instructions, tuple(dict.fromkeys(emphasis))
-    merged = tuple(dict.fromkeys(parent.emphasis + emphasis))
-    return parent.instructions + instructions, merged
+# Agentic migration: `accumulate` — the cross-utterance instruction fold — is
+# gone. The planning agent holds conversation state itself and declares the
+# full constraint set idempotently, so there is no edit algebra to fold. The
+# lineage store below survives: an adjustment still needs to find its parent.
 
 
 class PlanRunStore(Protocol):

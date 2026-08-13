@@ -5,8 +5,6 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
-from agent.client import build_extractor
-from agent.extract import Extractor
 from api.console import mount_console
 from api.errors import register_error_handlers
 from api.routes import copilot as copilot_routes
@@ -36,8 +34,6 @@ class Runtime:
         driver: Driver,
         resolver: Resolver,
         report: BuildReport,
-        extractor: Extractor,
-        live_extraction: bool,
         traces: TraceStore,
         plan_runs: PlanRunStore,
         durable: bool,
@@ -45,14 +41,6 @@ class Runtime:
         self.driver = driver
         self.resolver = resolver
         self.report = report
-        self.extractor = extractor
-        self.live_extraction = live_extraction
-        """False when no API key is configured. Not a degraded mode for the
-        generator: extraction is the entire model surface there, so the plans
-        are the same — they just have to be asked for as instructions rather
-        than as a sentence. The copilot degrades differently, because synthesis
-        *is* its output; it says so on every answer it returns."""
-
         self.traces = traces
         """Every run both surfaces have recorded, generator and copilot."""
 
@@ -83,7 +71,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             report = read_report(session)
         # Touching the matrix forces the model load and the concept embed now.
         vocabulary.similarities("warm")
-        extractor, live = build_extractor()
 
         if settings.database_url:
             from api.postgres import open_stores
@@ -94,7 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             traces, plan_runs, durable = InMemoryTraceStore(), InMemoryPlanRunStore(), False
 
         app.state.runtime = Runtime(
-            driver, Resolver(vocabulary), report, extractor, live, traces, plan_runs, durable
+            driver, Resolver(vocabulary), report, traces, plan_runs, durable
         )
         yield
     finally:
@@ -151,7 +138,6 @@ def health(run: Runtime = Depends(runtime), session: Session = Depends(graph)) -
         "status": "ok",
         "graph": {"nodes": live.node_total, "edges": live.edge_total},
         "vocabulary": {"concepts": len(run.resolver.vocabulary.concepts)},
-        "extraction": "live" if run.live_extraction else "scripted",
         "storage": "postgres" if run.durable else "memory",
     }
 
