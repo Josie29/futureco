@@ -1,66 +1,195 @@
-from neo4j import Session
+from functools import cached_property
 
-from resolver.models import Namespace, ResolvedConcept
+import numpy as np
+from neo4j import Session
+from pydantic import BaseModel, ConfigDict
+from rapidfuzz import fuzz, process
+
+from graph.schema import NodeLabel
+from graph.vocabulary import Pass
+from resolver.core import norm
+from resolver.models import (
+    LABEL_TO_NAMESPACE,
+    NAMESPACE_LABELS,
+    Namespace,
+    ResolvedConcept,
+    make_concept_id,
+)
+from settings import settings
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+class _Entry(BaseModel):
+    """One indexed concept."""
+
+    model_config = ConfigDict(frozen=True)
+
+    concept_id: str
+    name: str
+    namespace: Namespace
+    normalized: str
 
 
 class ConceptIndex:
     """The in-memory search structure the resolver runs against.
 
-    Built once per process from KG1 plus the authored alias file, namespaced
-    from the start: each namespace gets its own surface pool and embedding
-    matrix, so a lookup never scans concepts a call site already ruled out.
-
-    Relationship to `graph.vocabulary.Vocabulary`: that one belongs to the KG
-    build (exact/alias mention scanning at seed time, no embeddings needed at
-    query scale) and stays where it is. This index is the runtime, resolver-
-    facing counterpart; if the two converge during the rebuild, the build one
-    folds into here — not the other way around.
+    Built once per process from KG1's canonical names, namespaced from the
+    start: each namespace has its own surface map and embedding matrix, so a
+    scoped lookup never scans concepts the call site ruled out. Vocabulary
+    bridging (a coach's "pecs" for the catalog's "chest") is the calling
+    model's job, guided by the tool's unresolved near-misses — not an
+    authored alias layer here.
     """
 
-    @classmethod
-    def load(cls, session: Session, aliases_path: str) -> "ConceptIndex":
-        """Build the index from the graph and the authored aliases.
+    def __init__(self, entries: list[_Entry]) -> None:
+        self._entries: dict[Namespace, list[_Entry]] = {ns: [] for ns in Namespace}
+        self._exact: dict[Namespace, dict[str, list[_Entry]]] = {ns: {} for ns in Namespace}
+        for entry in entries:
+            self._entries[entry.namespace].append(entry)
+            self._exact[entry.namespace].setdefault(entry.normalized, []).append(entry)
 
-        Reads every resolvable concept per namespace, normalises surfaces with
-        `core.norm`, and embeds the concept labels (fastembed MiniLM, the model
-        already baked into the image). Loading is the expensive step — about a
-        second — so the caller owns the instance's lifetime, not this class.
+    @classmethod
+    def load(cls, session: Session) -> "ConceptIndex":
+        """Build the index from the graph's resolvable concepts.
 
         Args:
             session: An open Neo4j session onto the built graphs.
-            aliases_path: Path to data/authored/aliases.json.
 
         Returns:
             The loaded, ready-to-query index.
-
-        Raises:
-            NotImplementedError: Scaffolding; not implemented yet.
         """
-        raise NotImplementedError
+        labels = [label.value for ns in Namespace for label in NAMESPACE_LABELS[ns]]
+        rows = session.run(
+            """
+            UNWIND $labels AS label
+            MATCH (n) WHERE label IN labels(n) AND n.name IS NOT NULL
+            RETURN labels(n)[0] AS label, n.name AS name
+            """,
+            labels=labels,
+        )
+        entries = []
+        for row in rows:
+            namespace = LABEL_TO_NAMESPACE[NodeLabel(row["label"])]
+            entries.append(
+                _Entry(
+                    concept_id=make_concept_id(namespace, row["name"]),
+                    name=row["name"],
+                    namespace=namespace,
+                    normalized=norm(row["name"]),
+                )
+            )
+        return cls(entries)
 
-    def exact(self, surface: str, namespace: Namespace) -> list[ResolvedConcept]:
-        """Concepts whose canonical name or alias equals the normalised surface.
+    def exact(self, surface: str, namespace: Namespace | None) -> list[ResolvedConcept]:
+        """Concepts whose canonical name normalises to exactly this surface.
 
-        Raises:
-            NotImplementedError: Scaffolding; not implemented yet.
+        Args:
+            surface: Normalised query text.
+            namespace: Scope, or None for every namespace.
+
+        Returns:
+            Every concept named, all at confidence 1.0 — more than one is a
+            tie the caller must decline.
         """
-        raise NotImplementedError
+        return [
+            self._hit(entry, Pass.EXACT, 1.0, entry.name)
+            for ns in self._spaces(namespace)
+            for entry in self._exact[ns].get(surface, [])
+        ]
 
-    def fuzzy(self, surface: str, namespace: Namespace) -> list[ResolvedConcept]:
-        """Candidates by token-set similarity, scored, best first.
+    def fuzzy(self, surface: str, namespace: Namespace | None) -> list[ResolvedConcept]:
+        """Every in-scope concept scored by token-set ratio, best first.
 
-        Raises:
-            NotImplementedError: Scaffolding; not implemented yet.
+        `token_set_ratio` rather than a plain ratio: canonical names are
+        multi-word, so a coach's single word must score against the token it
+        shares rather than against the whole string.
+
+        Args:
+            surface: Normalised query text.
+            namespace: Scope, or None for every namespace.
+
+        Returns:
+            All candidates with scores in [0, 1], unthresholded — the caller
+            owns acceptance.
         """
-        raise NotImplementedError
+        pool = [e for ns in self._spaces(namespace) for e in self._entries[ns]]
+        matches = process.extract(
+            surface,
+            {i: entry.normalized for i, entry in enumerate(pool)},
+            scorer=fuzz.token_set_ratio,
+            limit=None,
+        )
+        scored = [
+            self._hit(pool[i], Pass.FUZZY, score / 100, pool[i].normalized)
+            for _, score, i in matches
+        ]
+        return sorted(scored, key=lambda c: c.confidence, reverse=True)
 
-    def nearest(self, surface: str, namespace: Namespace) -> list[ResolvedConcept]:
-        """Candidates by embedding cosine, scored, best first.
+    def vector(self, surface: str, namespace: Namespace | None) -> list[ResolvedConcept]:
+        """Every in-scope concept scored by embedding cosine, best first.
 
-        Also serves the near-miss report when every pass declines: the honest
-        "how far off was it" a coach sees instead of a silent no.
+        The pass that reaches meaning rather than spelling.
 
-        Raises:
-            NotImplementedError: Scaffolding; not implemented yet.
+        Args:
+            surface: Normalised query text.
+            namespace: Scope, or None for every namespace.
+
+        Returns:
+            All candidates with cosine scores, unthresholded — the caller
+            owns acceptance.
         """
-        raise NotImplementedError
+        query = next(iter(self._embedder.embed([surface])))
+        query = query / np.linalg.norm(query)
+        scored: list[ResolvedConcept] = []
+        for ns in self._spaces(namespace):
+            entries = self._entries[ns]
+            if not entries:
+                continue
+            similarities = self._matrix(ns) @ query
+            scored.extend(
+                self._hit(entry, Pass.VECTOR, float(sim), entry.normalized)
+                for entry, sim in zip(entries, similarities, strict=True)
+            )
+        return sorted(scored, key=lambda c: c.confidence, reverse=True)
+
+    @staticmethod
+    def _spaces(namespace: Namespace | None) -> tuple[Namespace, ...]:
+        return (namespace,) if namespace else tuple(Namespace)
+
+    @staticmethod
+    def _hit(entry: _Entry, method: Pass, confidence: float, via: str) -> ResolvedConcept:
+        return ResolvedConcept(
+            concept_id=entry.concept_id,
+            label=entry.name,
+            namespace=entry.namespace,
+            method=method,
+            confidence=round(confidence, 4),
+            matched_via=via,
+        )
+
+    @cached_property
+    def _embedder(self):  # noqa: ANN202 - fastembed's type is an implementation detail
+        """The embedding model, loaded on first vector lookup.
+
+        Lazy because most terms never reach the vector pass — exact and fuzzy
+        resolution work with no model in memory at all.
+        """
+        from fastembed import TextEmbedding
+
+        cache_dir = settings.model_cache_dir
+        return TextEmbedding(
+            model_name=EMBEDDING_MODEL,
+            cache_dir=str(cache_dir) if cache_dir else None,
+        )
+
+    def _matrix(self, namespace: Namespace) -> np.ndarray:
+        """L2-normalised embeddings for one namespace, one row per concept."""
+        if not hasattr(self, "_matrices"):
+            self._matrices: dict[Namespace, np.ndarray] = {}
+        if namespace not in self._matrices:
+            vectors = np.array(
+                list(self._embedder.embed(e.normalized for e in self._entries[namespace]))
+            )
+            self._matrices[namespace] = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+        return self._matrices[namespace]
