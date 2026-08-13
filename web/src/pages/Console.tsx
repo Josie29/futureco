@@ -21,7 +21,7 @@ import { RecentSessions } from "@/features/member/RecentSessions"
 import { Rail } from "@/features/roster/Rail"
 import { setReferenceDate } from "@/lib/dates"
 import { cn } from "@/lib/utils"
-import type { CopilotMessage, PlanRequest, WorkoutPlan } from "@/types"
+import type { CopilotMessage, PlanRequest, PlanResponse } from "@/types"
 
 function Centered({ title, body }: { title: string; body: string }) {
   return (
@@ -53,11 +53,7 @@ export default function Console() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const [plan, setPlan] = useState<WorkoutPlan | null>(null)
-  // Lives here rather than in the builder because an adjustment has to carry
-  // it too — otherwise refining a plan silently re-enables the equipment the
-  // coach just switched off.
-  const [disabled, setDisabled] = useState<string[]>([])
+  const [plan, setPlan] = useState<PlanResponse | null>(null)
   const [thread, setThread] = useState<CopilotMessage[] | null>(null)
 
   const roster = useQuery({ queryKey: ["roster"], queryFn: getRoster })
@@ -99,9 +95,9 @@ export default function Console() {
     onSuccess: setPlan,
   })
 
-  // An adjustment composes onto its parent server-side: the parent's
-  // instructions are loaded and this utterance's appended, so "only dumbbells"
-  // then "exclude lunges" keeps both.
+  // An adjustment continues its parent's conversation server-side: the
+  // parent's declared constraints and message history are replayed, so "only
+  // dumbbells" then "exclude lunges" keeps both.
   const rebuildFrom = useMutation({
     mutationFn: ({ runId, request }: { runId: string; request: PlanRequest }) =>
       adjustPlan(memberId, runId, request),
@@ -153,7 +149,6 @@ export default function Console() {
       // would put one member's context under another's name.
       setPlan(null)
       setThread(null)
-      setDisabled([])
       queryClient.removeQueries({ queryKey: ["copilot"] })
       navigate(`/m/${id}`)
     },
@@ -209,8 +204,6 @@ export default function Console() {
           <Builder
             member={context}
             memberId={memberId}
-            disabled={disabled}
-            onDisabledChange={setDisabled}
             onBuild={(request) => build.mutate(request)}
             building={busy}
             hasPlan={plan !== null}
@@ -231,14 +224,13 @@ export default function Console() {
           {plan && (
             <div className={cn(busy && "pointer-events-none opacity-40")}>
               <PlanSheet
-                plan={plan}
+                response={plan}
                 onAdjust={(prompt) =>
                   rebuildFrom.mutate({
                     runId: plan.run_id,
                     request: {
                       prompt,
-                      duration_min: plan.requested_minutes,
-                      disabled,
+                      duration_min: plan.duration_min,
                     },
                   })
                 }

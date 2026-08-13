@@ -1,12 +1,15 @@
+from collections.abc import Sequence
+
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from agents.workout_generator.belt import toolset
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
 from catalog.cards import load_cards
-from catalog.eligibility import EligibilityResult, apply
+from catalog.eligibility import EligibilityResult, Exclusion, apply
 from constraints.compose import compose
 from constraints.models import REQUIRING_EFFECTS
 from resolver.models import Namespace
@@ -126,6 +129,7 @@ generator = Agent(
     output_type=WorkoutPlan,
     instructions=GENERATOR_SYSTEM,
     toolsets=[toolset],
+    retries={"tools": 2, "output": 4},
 )
 
 
@@ -159,7 +163,7 @@ def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Work
         for e in plan.exercises
         if e.concept_id not in unknown and not e.concept_id.startswith(prefix)
     ]
-    problems = []
+    problems: list[str] = []
     if unknown:
         problems.append(
             f"these concept_ids were never returned by resolve_concept or "
@@ -182,12 +186,12 @@ def _safety_problems(plan: WorkoutPlan, result: EligibilityResult) -> list[str]:
     The caution check verifies an acknowledgment exists, not that its
     content actually adapts anything — that limit is deliberate and stated.
     """
-    exclusions_by_id: dict[str, list] = {}
+    exclusions_by_id: dict[str, list[Exclusion]] = {}
     for record in result.excluded:
         exclusions_by_id.setdefault(record.concept_id, []).append(record)
     cautions_by_id = {card.concept_id: card.cautions for card in result.eligible}
 
-    problems = []
+    problems: list[str] = []
     for slot in plan.exercises:
         for record in exclusions_by_id.get(slot.concept_id, []):
             evidence = f" [{record.evidence.render()}]" if record.evidence else ""
@@ -293,15 +297,42 @@ def enforce_time_budget(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Wo
     return plan
 
 
-async def generate(coach_prompt: str, deps: GeneratorDeps) -> WorkoutPlan:
+class Usage(BaseModel):
+    """What one run cost."""
+
+    model_config = ConfigDict(frozen=True)
+
+    llm_calls: int
+    tokens_in: int
+    tokens_out: int
+
+
+class GenerationRun(BaseModel):
+    """Everything one generation produced that a caller may persist."""
+
+    model_config = ConfigDict(frozen=True)
+
+    plan: WorkoutPlan
+    messages_json: bytes
+    """The full pydantic-ai message history, JSON — replayed on adjustment."""
+
+    usage: Usage
+
+
+async def generate(
+    coach_prompt: str,
+    deps: GeneratorDeps,
+    message_history: Sequence[ModelMessage] | None = None,
+) -> GenerationRun:
     """Run one generation end to end.
 
     Args:
         coach_prompt: The coach's request, verbatim.
         deps: The run's dependencies; its tool_log fills as the run proceeds.
+        message_history: A prior run's conversation, for adjustments.
 
     Returns:
-        The validated plan.
+        The validated plan, the message history for the next turn, and usage.
     """
     deps.clinical_constraints = load_clinical(deps.graph, deps.member_id)
     deps.tool_log.append(
@@ -315,5 +346,16 @@ async def generate(coach_prompt: str, deps: GeneratorDeps) -> WorkoutPlan:
         f"Coach request: {coach_prompt}\n"
         f"Session window: {deps.duration_min} minutes."
     )
-    result = await generator.run(prompt, deps=deps, model=build_model())
-    return result.output
+    result = await generator.run(
+        prompt, deps=deps, model=build_model(), message_history=message_history
+    )
+    used = result.usage
+    return GenerationRun(
+        plan=result.output,
+        messages_json=result.all_messages_json(),
+        usage=Usage(
+            llm_calls=used.requests,
+            tokens_in=used.input_tokens or 0,
+            tokens_out=used.output_tokens or 0,
+        ),
+    )

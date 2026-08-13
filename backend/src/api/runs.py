@@ -3,16 +3,16 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
+from agents.workout_generator.agent import WorkoutPlan
+from constraints.models import ConstraintSet
+
 
 class PlanRun(BaseModel):
-    """What one generation was asked for, kept so the next one can build on it.
+    """What one generation was and produced, kept so the next can build on it.
 
-    Agentic migration: the accumulated `instructions`/`emphasis` fold went
-    with the deterministic generator — the planning agent holds conversation
-    state itself and declares the full constraint set idempotently, so there
-    is no edit algebra to store. What an adjustment needs from its parent
-    (the declared constraint set, the plan) will be re-specified when the
-    agent lands; the lineage chain itself survives unchanged.
+    An adjustment replays `message_history` (the pydantic-ai conversation)
+    and seeds its deps with `declared_constraints`, so re-declaration diffs
+    stay honest across turns.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -22,6 +22,11 @@ class PlanRun(BaseModel):
     member_id: str
     prompt: str
     duration_min: int
+    declared_constraints: ConstraintSet = ConstraintSet()
+    message_history: str = ""
+    """The run's full pydantic-ai message history, as JSON text."""
+
+    plan: WorkoutPlan | None = None
 
 
 class PlanRunStore(Protocol):

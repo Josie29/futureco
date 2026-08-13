@@ -15,6 +15,7 @@ from api.runs import InMemoryPlanRunStore, PlanRunStore
 from api.traces import InMemoryTraceStore, TraceStore
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
+from resolver.index import ConceptIndex
 from settings import settings
 
 
@@ -30,12 +31,17 @@ class Runtime:
         self,
         driver: Driver,
         report: BuildReport,
+        concept_index: ConceptIndex,
         traces: TraceStore,
         plan_runs: PlanRunStore,
         durable: bool,
     ) -> None:
         self.driver = driver
         self.report = report
+        self.concept_index = concept_index
+        """The resolver's in-memory index, one per process. The embedder
+        inside stays lazy, so startup does not pay for it."""
+
         self.traces = traces
         """Every run both surfaces have recorded, generator and copilot."""
 
@@ -58,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         with driver.session() as session:
             report = read_report(session)
+            concept_index = ConceptIndex.load(session)
 
         if settings.database_url:
             from api.postgres import open_stores
@@ -67,7 +74,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else:
             traces, plan_runs, durable = InMemoryTraceStore(), InMemoryPlanRunStore(), False
 
-        app.state.runtime = Runtime(driver, report, traces, plan_runs, durable)
+        app.state.runtime = Runtime(
+            driver, report, concept_index, traces, plan_runs, durable
+        )
         yield
     finally:
         if pool is not None:

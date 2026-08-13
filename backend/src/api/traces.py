@@ -155,11 +155,91 @@ class InMemoryTraceStore:
         return next((run for run in self._runs if run.run_id == run_id), None)
 
 
-# Agentic migration: `build_generator_trace`, its stage-kind map and the
-# query-folding helper went with the deterministic pipeline. The rebuilt
-# generator emits spans from instrumented tool calls instead of a hand-kept
-# stage list; its trace builder lands with the planning agent. `RunTrace` and
-# the stores are shared with the copilot and unchanged.
+from agents.workout_generator.agent import Usage
+from agents.workout_generator.deps import ProvenanceEvent, ProvenanceKind
+
+_EVENT_KINDS: dict[ProvenanceKind, SpanKind] = {
+    ProvenanceKind.CONCEPT_RESOLUTION: SpanKind.RESOLVE,
+    ProvenanceKind.MEMBER_SNAPSHOT: SpanKind.GRAPH,
+    ProvenanceKind.CANDIDATE_RETRIEVAL: SpanKind.GRAPH,
+    ProvenanceKind.CLINICAL_ENVELOPE: SpanKind.GRAPH,
+    ProvenanceKind.CONSTRAINT_DECLARATION: SpanKind.TOOL,
+}
+
+
+def _event_attributes(event: ProvenanceEvent) -> list[SpanAttribute]:
+    pairs: list[tuple[str, str]] = []
+    if event.query:
+        pairs.append(("query", event.query))
+    if event.concept:
+        pairs.append(("concept", event.concept))
+    if event.candidates:
+        pairs.append(("eligible", str(len(event.candidates))))
+    if event.exclusions:
+        pairs.append(("excluded", str(len(event.exclusions))))
+    if event.constraint_set:
+        pairs.append(("constraints", str(len(event.constraint_set.constraints))))
+    if event.rejected_targets:
+        pairs.append(("rejected", str(len(event.rejected_targets))))
+    return [SpanAttribute(label=label, value=value) for label, value in pairs]
+
+
+def build_generator_trace(
+    run_id: str,
+    prompt: str,
+    started_at: datetime,
+    duration_ms: float,
+    tool_log: list[ProvenanceEvent],
+    usage: Usage,
+) -> RunTrace:
+    """Turn one generation's tool log into a trace.
+
+    Deliberately coarse: one root span with the wall time and one
+    zero-duration child per provenance event. The decision detail lives on
+    the plan response; per-tool timings arrive with richer instrumentation.
+    """
+    ids = (f"sp_{n}" for n in itertools.count(1))
+    root_id = next(ids)
+    spans = [
+        TraceSpan(
+            id=root_id,
+            parent_id=None,
+            kind=SpanKind.AGENT,
+            name="plan.generate",
+            started_ms=0.0,
+            duration_ms=round(duration_ms, 2),
+            status=SpanStatus.OK,
+            attributes=[SpanAttribute(label="tool events", value=str(len(tool_log)))],
+        )
+    ]
+    spans.extend(
+        TraceSpan(
+            id=next(ids),
+            parent_id=root_id,
+            kind=_EVENT_KINDS[event.kind],
+            name=event.kind.value,
+            started_ms=0.0,
+            duration_ms=0.0,
+            status=SpanStatus.OK,
+            attributes=_event_attributes(event),
+        )
+        for event in tool_log
+    )
+    return RunTrace(
+        run_id=run_id,
+        source="generator",
+        prompt=prompt,
+        started_at=started_at.astimezone(UTC).isoformat(),
+        duration_ms=round(duration_ms, 2),
+        status=SpanStatus.OK,
+        totals=RunTotals(
+            graph_queries=0,
+            llm_calls=usage.llm_calls,
+            tokens_in=usage.tokens_in,
+            tokens_out=usage.tokens_out,
+        ),
+        spans=spans,
+    )
 
 
 def build_copilot_trace(

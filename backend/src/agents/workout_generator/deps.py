@@ -51,6 +51,8 @@ class ProvenanceEvent(BaseModel):
     exclusions: tuple[Exclusion, ...] = ()
     """Never feeds citations; feeds the declared-constraints validator."""
 
+    unmatched_requires: tuple[str, ...] = ()
+
 
 @dataclass
 class GeneratorDeps:

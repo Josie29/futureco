@@ -33,6 +33,7 @@ def get_eligible_exercises(ctx: RunContext[GeneratorDeps]) -> EligibleOutput:
             member=ctx.deps.member_id,
             candidates=tuple(c.concept_id for c in result.eligible),
             exclusions=result.excluded,
+            unmatched_requires=result.unmatched_requires,
         )
     )
 

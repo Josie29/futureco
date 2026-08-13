@@ -1,3 +1,4 @@
+import json
 import logging
 
 from psycopg.rows import dict_row
@@ -34,18 +35,21 @@ CREATE TABLE IF NOT EXISTS trace_runs (
 CREATE INDEX IF NOT EXISTS trace_runs_started_at_idx ON trace_runs (started_at DESC);
 
 CREATE TABLE IF NOT EXISTS plan_runs (
-    run_id        TEXT PRIMARY KEY,
-    parent_run_id TEXT REFERENCES plan_runs (run_id),
-    member_id     TEXT        NOT NULL,
-    prompt        TEXT        NOT NULL,
-    duration_min  INTEGER     NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    run_id               TEXT PRIMARY KEY,
+    parent_run_id        TEXT REFERENCES plan_runs (run_id),
+    member_id            TEXT        NOT NULL,
+    prompt               TEXT        NOT NULL,
+    duration_min         INTEGER     NOT NULL,
+    declared_constraints JSONB       NOT NULL DEFAULT '{}',
+    message_history      JSONB       NOT NULL DEFAULT '[]',
+    plan                 JSONB,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Agentic migration: the instructions/emphasis JSONB columns went with the
--- deterministic generator's accumulated fold. A volume created before the
--- migration still has them (NOT NULL, no default) and will reject inserts —
--- reset the local Postgres volume rather than migrating a dev-only store.
+-- Agentic migration: this table's columns changed twice (instructions/
+-- emphasis dropped, then declared_constraints/message_history/plan added).
+-- CREATE IF NOT EXISTS will not alter an existing table — reset a
+-- pre-migration local Postgres volume rather than migrating a dev-only store.
 
 CREATE INDEX IF NOT EXISTS plan_runs_parent_idx ON plan_runs (parent_run_id);
 """
@@ -136,8 +140,9 @@ class PostgresPlanRunStore:
             conn.execute(
                 """
                 INSERT INTO plan_runs
-                    (run_id, parent_run_id, member_id, prompt, duration_min)
-                VALUES (%s, %s, %s, %s, %s)
+                    (run_id, parent_run_id, member_id, prompt, duration_min,
+                     declared_constraints, message_history, plan)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id) DO NOTHING
                 """,
                 (
@@ -146,6 +151,9 @@ class PostgresPlanRunStore:
                     body["member_id"],
                     body["prompt"],
                     body["duration_min"],
+                    Jsonb(body["declared_constraints"]),
+                    Jsonb(json.loads(run.message_history) if run.message_history else []),
+                    Jsonb(body["plan"]) if body["plan"] is not None else None,
                 ),
             )
 
@@ -158,6 +166,9 @@ class PostgresPlanRunStore:
             member_id=row["member_id"],
             prompt=row["prompt"],
             duration_min=row["duration_min"],
+            declared_constraints=row["declared_constraints"],
+            message_history=json.dumps(row["message_history"]),
+            plan=row["plan"],
         )
 
     def get(self, run_id: str) -> PlanRun | None:

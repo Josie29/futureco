@@ -13,11 +13,15 @@ from agents.workout_generator.tools.snapshot import member_snapshot
 #   tools/anatomy.py      expand_anatomy()       directed part_of closure
 #   tools/candidates.py   find_substitutes()     pattern siblings ∩ eligible
 #   tools/checks.py       check_plan()           validator stack as a dry run
+# sequential=True: the tools share one neo4j Session, which is not
+# thread-safe, and pydantic-ai otherwise runs sync tools in parallel
+# executor threads.
 toolset: FunctionToolset[GeneratorDeps] = FunctionToolset(
     tools=[
         member_snapshot,
         resolve_concept,
         declare_constraints,
         get_eligible_exercises,
-    ]
+    ],
+    sequential=True,
 )
