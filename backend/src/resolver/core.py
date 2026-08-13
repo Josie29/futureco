@@ -52,9 +52,8 @@ def resolve(
     Pass order is exact+alias (pooled, score 1.0), then fuzzy token-set ratio,
     then embedding cosine — stopping at the first pass with candidates. A
     top-two margin inside `thresholds.ambiguity_margin` declines rather than
-    guesses. Deterministic: same term, same index, same result. Member context
-    does not belong here — re-ranking against KG2 is `priors.apply_member_prior`,
-    kept separate so this function stays a pure function of KG1.
+    guesses. Deterministic, and a pure function of KG1: same term, same
+    index, same result. Member context never re-ranks here.
 
     Args:
         term: The free-text mention to resolve.

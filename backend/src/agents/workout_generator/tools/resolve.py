@@ -6,7 +6,6 @@ from pydantic_ai import RunContext
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
 from resolver.core import resolve
 from resolver.models import Namespace, ResolutionResult, ResolvedConcept
-from resolver.priors import apply_member_prior
 
 CONFIRM_CONFIDENCE = 0.85
 """Tool-layer gate, distinct from the resolver's own acceptance thresholds:
@@ -73,10 +72,6 @@ def resolve_concept(
     extracted mention BEFORE using any other graph tool. Graph tools accept
     only concept_ids returned by this tool, never raw text."""
     result = resolve(term, namespace, ctx.deps.concept_index)
-
-    # KG2 re-rank: laterality / documented-injury / owned-equipment priors.
-    result = apply_member_prior(result, ctx.deps.member)
-
     _log_resolution(ctx.deps, term, namespace, result)
 
     if result.resolved and result.resolved.confidence >= CONFIRM_CONFIDENCE:

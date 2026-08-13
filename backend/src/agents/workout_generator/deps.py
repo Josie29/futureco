@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict
 from graph.vocabulary import Pass
 from resolver.index import ConceptIndex
 from resolver.models import Namespace
-from resolver.priors import MemberPriors
 
 
 class ProvenanceKind(StrEnum):
@@ -56,5 +55,4 @@ class GeneratorDeps:
     tools exist."""
 
     concept_index: ConceptIndex
-    member: MemberPriors
     tool_log: list[ProvenanceEvent] = field(default_factory=list)
