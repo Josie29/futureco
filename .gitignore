@@ -6,3 +6,7 @@ __pycache__/
 
 # Tooling occasionally creates one at the repo root; the app owns web/node_modules.
 node_modules/
+
+# Developer sandbox: notebooks, probes, temp experiments. Never checked in.
+scratch/
+.ipynb_checkpoints/

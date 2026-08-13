@@ -18,6 +18,7 @@ dependencies = [
     "pydantic-settings>=2.8",
     "rapidfuzz>=3.14.5",
     "uvicorn>=0.38",
+    "pydantic-ai-slim[anthropic]>=2.28.0",
 ]
 
 [tool.uv]
