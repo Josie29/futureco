@@ -1,9 +1,8 @@
 from pydantic import BaseModel, ConfigDict
 
+from graph.normalize import normalize
 from graph.schema import NodeLabel
-from resolve.normalize import normalize
-from resolve.resolver import Pass
-from resolve.vocabulary import Concept, Vocabulary
+from graph.vocabulary import Concept, Pass, Vocabulary
 
 # Canonical names that are not safe to match as bare surface forms in prose.
 #

@@ -39,10 +39,13 @@ CREATE TABLE IF NOT EXISTS plan_runs (
     member_id     TEXT        NOT NULL,
     prompt        TEXT        NOT NULL,
     duration_min  INTEGER     NOT NULL,
-    instructions  JSONB       NOT NULL,
-    emphasis      JSONB       NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Agentic migration: the instructions/emphasis JSONB columns went with the
+-- deterministic generator's accumulated fold. A volume created before the
+-- migration still has them (NOT NULL, no default) and will reject inserts —
+-- reset the local Postgres volume rather than migrating a dev-only store.
 
 CREATE INDEX IF NOT EXISTS plan_runs_parent_idx ON plan_runs (parent_run_id);
 """
@@ -133,9 +136,8 @@ class PostgresPlanRunStore:
             conn.execute(
                 """
                 INSERT INTO plan_runs
-                    (run_id, parent_run_id, member_id, prompt, duration_min,
-                     instructions, emphasis)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (run_id, parent_run_id, member_id, prompt, duration_min)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (run_id) DO NOTHING
                 """,
                 (
@@ -144,8 +146,6 @@ class PostgresPlanRunStore:
                     body["member_id"],
                     body["prompt"],
                     body["duration_min"],
-                    Jsonb(body["instructions"]),
-                    Jsonb(body["emphasis"]),
                 ),
             )
 
@@ -158,8 +158,6 @@ class PostgresPlanRunStore:
             member_id=row["member_id"],
             prompt=row["prompt"],
             duration_min=row["duration_min"],
-            instructions=tuple(row["instructions"]),
-            emphasis=tuple(row["emphasis"]),
         )
 
     def get(self, run_id: str) -> PlanRun | None:

@@ -21,8 +21,8 @@ from graph.build.metrics import (
 )
 from graph.build.writes import EdgeWrite, NodeMatch, link_nodes, link_required, merge_nodes
 from graph.schema import GraphSource, NodeLabel, RelType
-from resolve.mentions import scan
-from resolve.vocabulary import Vocabulary
+from graph.mentions import scan
+from graph.vocabulary import Vocabulary
 from settings import settings
 
 _MEMBER = NodeMatch(label=NodeLabel.MEMBER, key="id")

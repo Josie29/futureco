@@ -1,10 +1,9 @@
 import pytest
 
 from graph.schema import NodeLabel
-from resolve.mentions import UNSAFE_CANONICAL_SURFACES, scan
-from resolve.normalize import normalize
-from resolve.resolver import Pass
-from resolve.vocabulary import Alias, Concept, Vocabulary
+from graph.mentions import UNSAFE_CANONICAL_SURFACES, scan
+from graph.normalize import normalize
+from graph.vocabulary import Alias, Concept, Pass, Vocabulary
 
 # The scanner's behaviour is a property of itself and of `aliases.json`, not of
 # the store, so these run with no Neo4j and no embedding model. That the real

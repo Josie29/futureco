@@ -1,4 +1,5 @@
 import json
+from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 
@@ -6,9 +7,23 @@ import numpy as np
 from neo4j import Session
 from pydantic import BaseModel, ConfigDict
 
+from graph.normalize import normalize
 from graph.schema import NodeLabel
-from resolve.normalize import normalize
 from settings import settings
+
+
+class Pass(StrEnum):
+    """Which pass matched a surface onto the vocabulary.
+
+    Lived in the resolver before the agentic migration; moved here with the
+    vocabulary because build-time mention scanning shares it, and the rebuilt
+    resolver tool will too. Mentions only ever use EXACT and ALIAS.
+    """
+
+    EXACT = "exact"
+    ALIAS = "alias"
+    FUZZY = "fuzzy"
+    VECTOR = "vector"
 
 # The labels a coach's words can name. Member, Goal, Injury and Condition are
 # deliberately absent: they identify one person's records rather than terms

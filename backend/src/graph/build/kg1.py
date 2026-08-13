@@ -16,7 +16,7 @@ from graph.build.member import Injury, load_member_context
 from graph.build.writes import EdgeWrite, NodeMatch, link_required, merge_nodes
 from graph.schema import AnatomicalTier, GraphSource, NodeLabel, RelType
 from graph.skos import SCHEME_OF, Collection, MatchType, Scheme, collection_of, load_collections
-from resolve.vocabulary import Alias
+from graph.vocabulary import Alias
 
 _ANATOMY = NodeMatch(label=NodeLabel.ANATOMICAL_STRUCTURE)
 _JOINT = NodeMatch(label=NodeLabel.ANATOMICAL_STRUCTURE, tier=AnatomicalTier.JOINT)
