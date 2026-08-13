@@ -134,6 +134,43 @@ def test_budget_passes_within_the_tolerance_band() -> None:
     assert enforce_time_budget(ctx, p) is p
 
 
+def test_snapshot_event_widens_no_citations() -> None:
+    """A disliked exercise seen only via the snapshot is not plannable.
+
+    The snapshot surfaces exercise ids as member context; if they entered
+    the citation allowlist, the model could plan the very exercise the
+    member dislikes without ever resolving it.
+    """
+    deps = deps_with_log()
+    deps.tool_log.append(
+        ProvenanceEvent(
+            kind=ProvenanceKind.MEMBER_SNAPSHOT, member="m1"
+        )
+    )
+    ctx = SimpleNamespace(deps=deps)
+    with pytest.raises(ModelRetry, match="never returned"):
+        enforce_citations(ctx, plan(slot("exercise:One-Kettlebell Hamstring Walkout")))
+
+
+def test_citations_ignore_non_resolution_events() -> None:
+    """Only resolution events feed the allowlist, whatever a log entry carries.
+
+    A future tool logging a concept id for tracing must not silently widen
+    the plannable set — the validator owns the rule, not tool restraint.
+    """
+    deps = deps_with_log()
+    deps.tool_log.append(
+        ProvenanceEvent(
+            kind=ProvenanceKind.MEMBER_SNAPSHOT,
+            concept="exercise:Smuggled Movement",
+            alternatives=("exercise:Also Smuggled",),
+        )
+    )
+    ctx = SimpleNamespace(deps=deps)
+    with pytest.raises(ModelRetry, match="never returned"):
+        enforce_citations(ctx, plan(slot("exercise:Smuggled Movement")))
+
+
 def test_validators_see_every_section() -> None:
     """A slot hiding in the warmup is checked like any other.
 

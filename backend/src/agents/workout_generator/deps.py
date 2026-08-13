@@ -13,6 +13,7 @@ class ProvenanceKind(StrEnum):
     """What kind of decision a provenance event records."""
 
     CONCEPT_RESOLUTION = "concept_resolution"
+    MEMBER_SNAPSHOT = "member_snapshot"
     # Grows with the tool belt: constraint_declaration, envelope_verdict,
     # candidate_retrieval, validator_verdict, ...
 
@@ -34,6 +35,7 @@ class ProvenanceEvent(BaseModel):
     concept: str | None = None
     confidence: float | None = None
     alternatives: tuple[str, ...] = ()
+    member: str | None = None
 
 
 @dataclass

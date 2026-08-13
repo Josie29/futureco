@@ -2,15 +2,13 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from agents.workout_generator.deps import GeneratorDeps
 from agents.workout_generator.tools.resolve import resolve_concept
+from agents.workout_generator.tools.snapshot import member_snapshot
 
 # The roster: if a tool is not in this list, the agent does not have it.
 #
 # The rest of the belt, in build order — each tool's contract is in the
 # agentic-migration design note:
 #
-#   tools/snapshot.py     member_snapshot()      KG2 read: injuries with
-#                                                status, equipment, dislikes,
-#                                                goals, recent patterns
 #   tools/constraints.py  declare_constraints()  full coach set, idempotent;
 #                                                recompose -> re-filter -> diff
 #   tools/candidates.py   eligible_exercises()   verdict-annotated candidates;
@@ -21,6 +19,7 @@ from agents.workout_generator.tools.resolve import resolve_concept
 #   tools/checks.py       check_plan()           validator stack as a dry run
 toolset: FunctionToolset[GeneratorDeps] = FunctionToolset(
     tools=[
+        member_snapshot,
         resolve_concept,
     ]
 )

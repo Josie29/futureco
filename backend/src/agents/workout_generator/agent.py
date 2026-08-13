@@ -4,7 +4,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from agents.workout_generator.belt import toolset
-from agents.workout_generator.deps import GeneratorDeps
+from agents.workout_generator.deps import GeneratorDeps, ProvenanceKind
 from settings import settings
 
 
@@ -53,22 +53,32 @@ You are a workout planning agent for a coach. Compose one workout plan for
 one member from the coach's request and the session window given in the
 user message.
 
-Your only graph tool is resolve_concept. It maps one free-text term onto a
-canonical concept and is the sole source of concept_ids.
+Your graph tools:
+- member_snapshot reads the member's chart: equipment, disliked exercises,
+  injuries as recorded, goals, and recent training by movement pattern.
+- resolve_concept maps one free-text term onto a canonical concept and is
+  the sole source of plannable concept_ids.
 
 Work like this:
-1. Extract every concrete mention from the request - exercises, muscles,
+1. Call member_snapshot first. Plan with the member's own equipment unless
+   the coach names other equipment. Never plan a disliked exercise.
+   Injuries are recorded facts, not verdicts: you have no safety tooling,
+   so make no claim that a plan is safe or cleared - prefer work consistent
+   with the injury notes, and say in coach_notes when an injury shaped a
+   choice.
+2. Extract every concrete mention from the request - exercises, muscles,
    equipment, body parts, movement patterns - and resolve each one before
    planning.
-2. The plan may only contain exercise concept_ids that resolve_concept
-   returned this run. You do not know the catalog; discover it by proposing
-   likely exercise names and resolving them. Unresolved results list
-   near-misses that ARE real catalog names - resolve the promising ones.
-3. Follow the guidance field on every tool result.
-4. Per exercise, give sets, a reps prescription, a whole-slot cost in
+3. The plan may only contain exercise concept_ids that resolve_concept
+   returned this run. Snapshot concept_ids are context, not citations. You
+   do not know the catalog; discover it by proposing likely exercise names
+   and resolving them. Unresolved results list near-misses that ARE real
+   catalog names - resolve the promising ones.
+4. Follow the guidance field on every tool result.
+5. Per exercise, give sets, a reps prescription, a whole-slot cost in
    seconds including rest, and a one-sentence rationale.
-5. Land the total within 15 percent of the session window.
-6. If part of the request cannot be honored, say so in coach_notes rather
+6. Land the total within 15 percent of the session window.
+7. If part of the request cannot be honored, say so in coach_notes rather
    than substituting silently.
 """
 
@@ -98,14 +108,19 @@ generator = Agent(
 
 @generator.output_validator
 def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
-    """Every concept id in the plan must have been returned by a tool call
-    this run — the model cannot name an exercise it was never shown.
+    """Every concept id in the plan must have been returned by resolve_concept
+    this run — the model cannot name an exercise it was never shown, and ids
+    other tools surface as context never widen the plannable set.
 
     Raises:
         ModelRetry: If an id was never shown, or is not an exercise.
     """
-    shown = {event.concept for event in ctx.deps.tool_log if event.concept}
-    shown |= {alt for event in ctx.deps.tool_log for alt in event.alternatives}
+    resolutions = [
+        event for event in ctx.deps.tool_log
+        if event.kind is ProvenanceKind.CONCEPT_RESOLUTION
+    ]
+    shown = {event.concept for event in resolutions if event.concept}
+    shown |= {alt for event in resolutions for alt in event.alternatives}
 
     unknown = [e.concept_id for e in plan.exercises if e.concept_id not in shown]
     wrong_kind = [
