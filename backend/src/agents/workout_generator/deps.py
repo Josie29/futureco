@@ -4,6 +4,8 @@ from enum import StrEnum
 from neo4j import Session
 from pydantic import BaseModel, ConfigDict
 
+from constraints.diff import ConstraintDiff
+from constraints.models import ConstraintSet
 from graph.vocabulary import Pass
 from resolver.index import ConceptIndex
 from resolver.models import Namespace
@@ -14,8 +16,9 @@ class ProvenanceKind(StrEnum):
 
     CONCEPT_RESOLUTION = "concept_resolution"
     MEMBER_SNAPSHOT = "member_snapshot"
-    # Grows with the tool belt: constraint_declaration, envelope_verdict,
-    # candidate_retrieval, validator_verdict, ...
+    CONSTRAINT_DECLARATION = "constraint_declaration"
+    # Grows with the tool belt: envelope_verdict, candidate_retrieval,
+    # validator_verdict, ...
 
 
 class ProvenanceEvent(BaseModel):
@@ -36,6 +39,9 @@ class ProvenanceEvent(BaseModel):
     confidence: float | None = None
     alternatives: tuple[str, ...] = ()
     member: str | None = None
+    constraint_set: ConstraintSet | None = None
+    constraint_diff: ConstraintDiff | None = None
+    rejected_targets: tuple[str, ...] = ()
 
 
 @dataclass
@@ -54,3 +60,8 @@ class GeneratorDeps:
 
     concept_index: ConceptIndex
     tool_log: list[ProvenanceEvent] = field(default_factory=list)
+    declared_constraints: ConstraintSet = field(default_factory=ConstraintSet)
+    """The coach-declared set in force, replaced wholesale by
+    declare_constraints. When compose(standing, declared) lands, readers
+    consume the composed set but the declaration diff still runs against
+    this one."""

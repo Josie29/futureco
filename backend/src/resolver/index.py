@@ -41,9 +41,15 @@ class ConceptIndex:
     def __init__(self, entries: list[_Entry]) -> None:
         self._entries: dict[Namespace, list[_Entry]] = {ns: [] for ns in Namespace}
         self._exact: dict[Namespace, dict[str, list[_Entry]]] = {ns: {} for ns in Namespace}
+        self._ids = frozenset(entry.concept_id for entry in entries)
         for entry in entries:
             self._entries[entry.namespace].append(entry)
             self._exact[entry.namespace].setdefault(entry.normalized, []).append(entry)
+
+    def has(self, concept_id: str) -> bool:
+        """Whether this exact namespace:name id names an indexed concept —
+        referential integrity for ids arriving from outside the resolver."""
+        return concept_id in self._ids
 
     @classmethod
     def load(cls, session: Session) -> "ConceptIndex":

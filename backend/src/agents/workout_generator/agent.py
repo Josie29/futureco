@@ -5,6 +5,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from agents.workout_generator.belt import toolset
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceKind
+from constraints.models import EXCLUDING_EFFECTS, REQUIRING_EFFECTS
+from resolver.models import Namespace
 from settings import settings
 
 
@@ -58,6 +60,8 @@ Your graph tools:
   injuries as recorded, goals, and recent training by movement pattern.
 - resolve_concept maps one free-text term onto a canonical concept and is
   the sole source of plannable concept_ids.
+- declare_constraints records the coach's directives (avoid, prefer,
+  require) as the full set in force; the plan is validated against it.
 
 Work like this:
 1. Call member_snapshot first. Plan with the member's own equipment unless
@@ -69,16 +73,19 @@ Work like this:
 2. Extract every concrete mention from the request - exercises, muscles,
    equipment, body parts, movement patterns - and resolve each one before
    planning.
-3. The plan may only contain exercise concept_ids that resolve_concept
+3. Declare the coach's directives with declare_constraints after resolving
+   their targets. State the FULL set each call - anything omitted is
+   dropped, and the diff will show the drop.
+4. The plan may only contain exercise concept_ids that resolve_concept
    returned this run. Snapshot concept_ids are context, not citations. You
    do not know the catalog; discover it by proposing likely exercise names
    and resolving them. Unresolved results list near-misses that ARE real
    catalog names - resolve the promising ones.
-4. Follow the guidance field on every tool result.
-5. Per exercise, give sets, a reps prescription, a whole-slot cost in
+5. Follow the guidance field on every tool result.
+6. Per exercise, give sets, a reps prescription, a whole-slot cost in
    seconds including rest, and a one-sentence rationale.
-6. Land the total within 15 percent of the session window.
-7. If part of the request cannot be honored, say so in coach_notes rather
+7. Land the total within 15 percent of the session window.
+8. If part of the request cannot be honored, say so in coach_notes rather
    than substituting silently.
 """
 
@@ -138,6 +145,46 @@ def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Work
         problems.append(
             f"these concept_ids are not exercises: {wrong_kind}. "
             f"Plan slots must use exercise concepts."
+        )
+    if problems:
+        raise ModelRetry(" ".join(problems))
+    return plan
+
+
+@generator.output_validator
+def enforce_declared_constraints(
+    ctx: RunContext[GeneratorDeps], plan: WorkoutPlan
+) -> WorkoutPlan:
+    """Exercise-target directives are enforced here; broader targets (muscle,
+    pattern, equipment, anatomy) are model-honored until the safety envelope
+    can expand them through the graph.
+
+    Raises:
+        ModelRetry: If any section uses an avoided exercise, or a required
+            exercise appears in no section.
+    """
+    planned = {e.concept_id for e in plan.exercises}
+    prefix = f"{Namespace.EXERCISE.value}:"
+    declared = [
+        c for c in ctx.deps.declared_constraints.constraints
+        if c.target.startswith(prefix)
+    ]
+
+    avoided = [c for c in declared if c.effect in EXCLUDING_EFFECTS and c.target in planned]
+    missing = [
+        c for c in declared if c.effect in REQUIRING_EFFECTS and c.target not in planned
+    ]
+    problems = []
+    if avoided:
+        problems.append(
+            f"the plan uses exercises declared avoid: "
+            f"{[(c.target, c.reason) for c in avoided]}. Replace these slots."
+        )
+    if missing:
+        problems.append(
+            f"these declared require exercises appear in no section: "
+            f"{[(c.target, c.reason) for c in missing]}. Add them, or if "
+            f"impossible, re-declare without them and say why in coach_notes."
         )
     if problems:
         raise ModelRetry(" ".join(problems))

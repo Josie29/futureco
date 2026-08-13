@@ -153,3 +153,16 @@ def test_norm_is_minimal() -> None:
     """
     assert norm("  Push-Up  to   Knee-Drive ") == "push up to knee drive"
     assert norm("her left knee") == "her left knee"
+
+
+def test_has_checks_referential_integrity(index: ConceptIndex) -> None:
+    """has() answers exactly "is this id real currency".
+
+    Constraint targets and any future id arriving from outside the resolver
+    are gated on this; a false positive would let a directive point at
+    nothing, a false negative would reject the snapshot's own ids.
+    """
+    assert index.has("anatomy:knee")
+    assert not index.has("muscle:knee")
+    assert not index.has("exercise:Invented Movement")
+    assert not index.has("knee")

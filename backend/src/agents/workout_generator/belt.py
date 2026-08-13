@@ -1,6 +1,7 @@
 from pydantic_ai.toolsets import FunctionToolset
 
 from agents.workout_generator.deps import GeneratorDeps
+from agents.workout_generator.tools.constraints import declare_constraints
 from agents.workout_generator.tools.resolve import resolve_concept
 from agents.workout_generator.tools.snapshot import member_snapshot
 
@@ -8,9 +9,6 @@ from agents.workout_generator.tools.snapshot import member_snapshot
 #
 # The rest of the belt, in build order — each tool's contract is in the
 # agentic-migration design note:
-#
-#   tools/constraints.py  declare_constraints()  full coach set, idempotent;
-#                                                recompose -> re-filter -> diff
 #   tools/candidates.py   eligible_exercises()   verdict-annotated candidates;
 #                                                blocked never selectable
 #                         expand_anatomy()       directed part_of closure
@@ -21,5 +19,6 @@ toolset: FunctionToolset[GeneratorDeps] = FunctionToolset(
     tools=[
         member_snapshot,
         resolve_concept,
+        declare_constraints,
     ]
 )

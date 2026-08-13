@@ -9,7 +9,12 @@ from agents.workout_generator.agent import (
     enforce_citations,
     enforce_time_budget,
 )
+from agents.workout_generator.agent import enforce_declared_constraints
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
+from agents.workout_generator.tools.constraints import CoachConstraint, declare_constraints
+from constraints.models import Constraint, ConstraintSet, Effect, Origin
+from resolver.index import ConceptIndex, _Entry
+from resolver.models import Namespace
 
 
 def deps_with_log(*concept_ids: str, alternatives: tuple[str, ...] = ()) -> GeneratorDeps:
@@ -181,3 +186,165 @@ def test_validators_see_every_section() -> None:
     p = plan(slot("exercise:Goblet Squat"), warmup=(slot("exercise:Never Shown"),))
     with pytest.raises(ModelRetry, match="never returned"):
         enforce_citations(ctx, p)
+
+
+def constraint(target: str, effect: Effect, reason: str = "coach said so") -> Constraint:
+    return Constraint(target=target, effect=effect, origin=Origin.COACH, reason=reason)
+
+
+def ctx_with_declared(*constraints: Constraint) -> SimpleNamespace:
+    deps = deps_with_log()
+    deps.declared_constraints = ConstraintSet(constraints=constraints)
+    return SimpleNamespace(deps=deps)
+
+
+def test_avoided_exercise_is_rejected_wherever_it_hides() -> None:
+    """An avoided exercise bounces the plan, warmup included.
+
+    Without this the coach's "no X" survives only as long as the model
+    remembers it — the declared set would be decoration.
+    """
+    ctx = ctx_with_declared(constraint("exercise:Jump Squat", Effect.AVOID, "no jumping"))
+    with pytest.raises(ModelRetry, match="no jumping"):
+        enforce_declared_constraints(ctx, plan(slot("exercise:X"),
+                                               warmup=(slot("exercise:Jump Squat"),)))
+
+
+def test_required_exercise_missing_bounces_with_the_reason() -> None:
+    """A required exercise absent from every section bounces the plan."""
+    ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.REQUIRE))
+    with pytest.raises(ModelRetry, match="no section"):
+        enforce_declared_constraints(ctx, plan(slot("exercise:Other")))
+
+
+def test_required_exercise_anywhere_satisfies() -> None:
+    """A required exercise counts from any section."""
+    ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.REQUIRE))
+    p = plan(slot("exercise:Other"), warmup=(slot("exercise:Goblet Squat"),))
+    assert enforce_declared_constraints(ctx, p) is p
+
+
+def test_broad_targets_do_not_auto_reject() -> None:
+    """Muscle and pattern targets pass validation — honestly unenforced.
+
+    No graph expansion exists yet; auto-rejecting on a prefix the validator
+    cannot expand would fake a safety property the system does not have.
+    """
+    ctx = ctx_with_declared(
+        constraint("muscle:quads", Effect.AVOID),
+        constraint("movement_pattern:cardio - plyometric", Effect.AVOID),
+    )
+    p = plan(slot("exercise:Anything"))
+    assert enforce_declared_constraints(ctx, p) is p
+
+
+def test_prefer_never_rejects() -> None:
+    """PREFER is a bias, not a gate."""
+    ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.PREFER))
+    p = plan(slot("exercise:Other"))
+    assert enforce_declared_constraints(ctx, p) is p
+
+
+def test_empty_declared_set_passes_everything() -> None:
+    """No declaration, no constraint checks."""
+    ctx = SimpleNamespace(deps=deps_with_log())
+    p = plan(slot("exercise:Anything"))
+    assert enforce_declared_constraints(ctx, p) is p
+
+
+def _index() -> ConceptIndex:
+    return ConceptIndex([
+        _Entry(concept_id="exercise:Goblet Squat", name="Goblet Squat",
+               namespace=Namespace.EXERCISE, normalized="goblet squat"),
+        _Entry(concept_id="muscle:glutes", name="glutes",
+               namespace=Namespace.MUSCLE, normalized="glutes"),
+    ])
+
+
+def declare_ctx() -> SimpleNamespace:
+    deps = deps_with_log()
+    deps.concept_index = _index()
+    return SimpleNamespace(deps=deps)
+
+
+def test_declaration_replaces_state_and_stamps_coach() -> None:
+    """An accepted declaration is the new set in force, origin stamped.
+
+    If origin were model-settable, a declaration could speak for the
+    clinician; the wire model has no such field and the tool stamps COACH.
+    """
+    ctx = declare_ctx()
+    out = declare_constraints(ctx, [
+        CoachConstraint(target="exercise:Goblet Squat", effect=Effect.REQUIRE, reason="asked"),
+        CoachConstraint(target="muscle:glutes", effect=Effect.PREFER, reason="focus"),
+    ])
+    assert out.status == "accepted"
+    assert len(out.added) == 2 and out.removed == ()
+    assert all(c.origin is Origin.COACH for c in ctx.deps.declared_constraints.constraints)
+    assert "origin" not in CoachConstraint.model_fields
+
+
+def test_redeclaration_shows_the_drop() -> None:
+    """Omitting a constraint from the next declaration surfaces as removed."""
+    ctx = declare_ctx()
+    declare_constraints(ctx, [
+        CoachConstraint(target="exercise:Goblet Squat", effect=Effect.REQUIRE, reason="asked"),
+        CoachConstraint(target="muscle:glutes", effect=Effect.PREFER, reason="focus"),
+    ])
+    out = declare_constraints(ctx, [
+        CoachConstraint(target="muscle:glutes", effect=Effect.PREFER, reason="focus"),
+    ])
+    assert [r.target for r in out.removed] == ["exercise:Goblet Squat"]
+
+
+def test_invalid_target_rejects_the_whole_declaration() -> None:
+    """One bad target rejects everything and the previous set stands.
+
+    A partial accept would install a set no declaration ever asserted,
+    and the model's mental previous-set would diverge from deps.
+    """
+    ctx = declare_ctx()
+    declare_constraints(ctx, [
+        CoachConstraint(target="muscle:glutes", effect=Effect.PREFER, reason="focus"),
+    ])
+    out = declare_constraints(ctx, [
+        CoachConstraint(target="exercise:Goblet Squat", effect=Effect.AVOID, reason="ok"),
+        CoachConstraint(target="raw text", effect=Effect.AVOID, reason="bad"),
+        CoachConstraint(target="exercise:Invented", effect=Effect.AVOID, reason="bad"),
+    ])
+    assert out.status == "rejected"
+    assert [c.target for c in out.active] == ["muscle:glutes"]
+    assert ctx.deps.declared_constraints.targets(Effect.PREFER) == frozenset({"muscle:glutes"})
+    problems = {i.target: i.problem for i in out.invalid}
+    assert "not a concept_id" in problems["raw text"]
+    assert "resolve the term first" in problems["exercise:Invented"]
+
+
+def test_declaration_events_are_logged_for_accept_and_reject() -> None:
+    """Both outcomes land in provenance — a failed install is a decision too."""
+    ctx = declare_ctx()
+    declare_constraints(ctx, [
+        CoachConstraint(target="muscle:glutes", effect=Effect.PREFER, reason="focus"),
+    ])
+    declare_constraints(ctx, [
+        CoachConstraint(target="nonsense", effect=Effect.AVOID, reason="bad"),
+    ])
+    events = [e for e in ctx.deps.tool_log
+              if e.kind is ProvenanceKind.CONSTRAINT_DECLARATION]
+    assert len(events) == 2
+    assert events[0].constraint_set is not None and events[0].constraint_diff is not None
+    assert events[1].rejected_targets == ("nonsense",)
+
+
+def test_declaration_events_never_widen_citations() -> None:
+    """Constraint targets are not plannable citations.
+
+    Declaring avoid on an exercise must not make that exercise citable —
+    only resolve_concept results feed the allowlist.
+    """
+    ctx = declare_ctx()
+    declare_constraints(ctx, [
+        CoachConstraint(target="exercise:Goblet Squat", effect=Effect.PREFER, reason="ok"),
+    ])
+    with pytest.raises(ModelRetry, match="never returned"):
+        enforce_citations(ctx, plan(slot("exercise:Goblet Squat")))
