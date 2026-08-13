@@ -12,6 +12,7 @@ from agents.workout_generator.agent import (
 from agents.workout_generator.agent import enforce_declared_constraints
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
 from agents.workout_generator.tools.constraints import CoachConstraint, declare_constraints
+from catalog.eligibility import Exclusion, ExclusionCause
 from constraints.models import Constraint, ConstraintSet, Effect, Origin
 from resolver.index import ConceptIndex, _Entry
 from resolver.models import Namespace
@@ -225,10 +226,11 @@ def test_required_exercise_anywhere_satisfies() -> None:
 
 
 def test_broad_targets_do_not_auto_reject() -> None:
-    """Muscle and pattern targets pass validation — honestly unenforced.
+    """Broad targets alone do not reject a plan at validation time.
 
-    No graph expansion exists yet; auto-rejecting on a prefix the validator
-    cannot expand would fake a safety property the system does not have.
+    Their enforcement lives at retrieval (matching exercises are excluded
+    and the exclusion records bind the plan); with no retrieval event the
+    validator has nothing to expand against and must not guess.
     """
     ctx = ctx_with_declared(
         constraint("muscle:quads", Effect.AVOID),
@@ -348,3 +350,124 @@ def test_declaration_events_never_widen_citations() -> None:
     ])
     with pytest.raises(ModelRetry, match="never returned"):
         enforce_citations(ctx, plan(slot("exercise:Goblet Squat")))
+
+
+def retrieval_event(candidates: tuple[str, ...] = (),
+                    exclusions: tuple[Exclusion, ...] = ()) -> ProvenanceEvent:
+    return ProvenanceEvent(
+        kind=ProvenanceKind.CANDIDATE_RETRIEVAL,
+        candidates=candidates,
+        exclusions=exclusions,
+    )
+
+
+def exclusion(concept_id: str, reason: str = "coach said") -> Exclusion:
+    return Exclusion(
+        concept_id=concept_id,
+        cause=ExclusionCause.AVOIDED,
+        matched_target="movement_pattern:p",
+        reason=reason,
+    )
+
+
+def test_retrieval_candidates_are_citable() -> None:
+    """An eligible card id is plannable without a separate resolve.
+
+    Retrieval is now the primary catalog browse; forcing a redundant
+    resolve of every returned id would double the tool traffic for nothing.
+    """
+    deps = deps_with_log()
+    deps.tool_log.append(retrieval_event(candidates=("exercise:Goblet Squat",)))
+    ctx = SimpleNamespace(deps=deps)
+    p = plan(slot("exercise:Goblet Squat"))
+    assert enforce_citations(ctx, p) is p
+
+
+def test_retrieval_exclusions_are_never_citable() -> None:
+    """An id present only in exclusion records is not plannable.
+
+    The candidates/exclusions field split is the security boundary: if
+    exclusion records fed the allowlist, every excluded exercise would
+    become plannable by virtue of being excluded.
+    """
+    deps = deps_with_log()
+    deps.tool_log.append(retrieval_event(exclusions=(exclusion("exercise:Jump Squat"),)))
+    ctx = SimpleNamespace(deps=deps)
+    with pytest.raises(ModelRetry, match="never returned"):
+        enforce_citations(ctx, plan(slot("exercise:Jump Squat")))
+
+
+def test_planned_id_in_latest_retrieval_exclusions_bounces() -> None:
+    """A retrieval-excluded exercise cannot be planned via direct resolve.
+
+    Closes the loophole where the model resolves an avoided-pattern
+    exercise by name and plans it — the exercise-prefix validator alone
+    would wave it through.
+    """
+    deps = deps_with_log("exercise:Jump Squat")
+    deps.tool_log.append(
+        retrieval_event(exclusions=(exclusion("exercise:Jump Squat", "no jumping"),))
+    )
+    ctx = SimpleNamespace(deps=deps)
+    with pytest.raises(ModelRetry, match="no jumping"):
+        enforce_declared_constraints(ctx, plan(slot("exercise:Jump Squat")))
+
+
+def test_stale_exclusions_from_older_retrievals_do_not_bounce() -> None:
+    """Only the latest retrieval's exclusions bind the plan.
+
+    After a re-declaration frees an exercise, a stale record from before
+    the change must not deadlock every retry.
+    """
+    deps = deps_with_log("exercise:Jump Squat")
+    deps.tool_log.append(
+        retrieval_event(exclusions=(exclusion("exercise:Jump Squat"),))
+    )
+    deps.tool_log.append(retrieval_event(candidates=("exercise:Jump Squat",)))
+    ctx = SimpleNamespace(deps=deps)
+    p = plan(slot("exercise:Jump Squat"))
+    assert enforce_declared_constraints(ctx, p) is p
+
+
+def test_get_eligible_exercises_logs_one_split_event(monkeypatch) -> None:
+    """The tool logs eligible ids and exclusion records in separate fields.
+
+    The event is what citations and the constraint validator read; merging
+    the fields would collapse the plannable/rejected boundary.
+    """
+    from agents.workout_generator.tools import candidates as ct
+    from catalog.cards import ExerciseCard
+
+    liked = ExerciseCard(
+        concept_id="exercise:Kept", name="Kept", patterns=("movement_pattern:p",),
+        muscles=(), equipment_required=(), missing_equipment=(), joints=(),
+        is_reps=True, is_duration=False, estimated_rep_seconds=4.0,
+        is_bilateral=True, side=None, supports_weight=True, disliked=False,
+        goal_overlap=(),
+    )
+    hated = liked.model_copy(
+        update={"concept_id": "exercise:Dropped", "name": "Dropped", "disliked": True}
+    )
+    monkeypatch.setattr(ct, "load_cards", lambda session, member_id: (liked, hated))
+
+    ctx = SimpleNamespace(deps=deps_with_log())
+    out = ct.get_eligible_exercises(ctx)
+    assert [e.concept_id for e in out.eligible] == ["exercise:Kept"]
+    (event,) = [e for e in ctx.deps.tool_log
+                if e.kind is ProvenanceKind.CANDIDATE_RETRIEVAL]
+    assert event.candidates == ("exercise:Kept",)
+    assert [x.concept_id for x in event.exclusions] == ["exercise:Dropped"]
+
+
+def test_unmatched_requires_warn_in_guidance(monkeypatch) -> None:
+    """A require nothing can satisfy is warned before composition begins."""
+    from agents.workout_generator.tools import candidates as ct
+
+    monkeypatch.setattr(ct, "load_cards", lambda session, member_id: ())
+    deps = deps_with_log()
+    deps.declared_constraints = ConstraintSet(
+        constraints=(constraint("exercise:Ghost", Effect.REQUIRE),)
+    )
+    out = ct.get_eligible_exercises(SimpleNamespace(deps=deps))
+    assert "exercise:Ghost" in out.guidance
+    assert "WARNING" in out.guidance

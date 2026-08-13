@@ -62,6 +62,9 @@ Your graph tools:
   the sole source of plannable concept_ids.
 - declare_constraints records the coach's directives (avoid, prefer,
   require) as the full set in force; the plan is validated against it.
+- get_eligible_exercises returns every exercise you may plan, judged
+  against the member's chart and the declared constraints, with every
+  exclusion and its cause.
 
 Work like this:
 1. Call member_snapshot first. Plan with the member's own equipment unless
@@ -76,11 +79,12 @@ Work like this:
 3. Declare the coach's directives with declare_constraints after resolving
    their targets. State the FULL set each call - anything omitted is
    dropped, and the diff will show the drop.
-4. The plan may only contain exercise concept_ids that resolve_concept
-   returned this run. Snapshot concept_ids are context, not citations. You
-   do not know the catalog; discover it by proposing likely exercise names
-   and resolving them. Unresolved results list near-misses that ARE real
-   catalog names - resolve the promising ones.
+4. After declaring constraints, call get_eligible_exercises. Plan only
+   with exercise concept_ids from its eligible cards or from
+   resolve_concept results this run; never a retrieval-excluded id.
+   Snapshot concept_ids are context, not citations. Re-call it after any
+   re-declaration. resolve_concept remains the path for terms the coach
+   names.
 5. Follow the guidance field on every tool result.
 6. Per exercise, give sets, a reps prescription, a whole-slot cost in
    seconds including rest, and a one-sentence rationale.
@@ -116,8 +120,9 @@ generator = Agent(
 @generator.output_validator
 def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
     """Every concept id in the plan must have been returned by resolve_concept
-    this run — the model cannot name an exercise it was never shown, and ids
-    other tools surface as context never widen the plannable set.
+    or get_eligible_exercises this run — the model cannot name an exercise it
+    was never shown, and ids other tools surface as context never widen the
+    plannable set.
 
     Raises:
         ModelRetry: If an id was never shown, or is not an exercise.
@@ -128,18 +133,25 @@ def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Work
     ]
     shown = {event.concept for event in resolutions if event.concept}
     shown |= {alt for event in resolutions for alt in event.alternatives}
+    shown |= {
+        candidate
+        for event in ctx.deps.tool_log
+        if event.kind is ProvenanceKind.CANDIDATE_RETRIEVAL
+        for candidate in event.candidates
+    }
 
+    prefix = f"{Namespace.EXERCISE.value}:"
     unknown = [e.concept_id for e in plan.exercises if e.concept_id not in shown]
     wrong_kind = [
         e.concept_id
         for e in plan.exercises
-        if e.concept_id not in unknown and not e.concept_id.startswith("exercise:")
+        if e.concept_id not in unknown and not e.concept_id.startswith(prefix)
     ]
     problems = []
     if unknown:
         problems.append(
-            f"these concept_ids were never returned by resolve_concept this run: "
-            f"{unknown}. Resolve real catalog names and use only returned ids."
+            f"these concept_ids were never returned by resolve_concept or "
+            f"get_eligible_exercises this run: {unknown}. Use only returned ids."
         )
     if wrong_kind:
         problems.append(
@@ -174,6 +186,20 @@ def enforce_declared_constraints(
     missing = [
         c for c in declared if c.effect in REQUIRING_EFFECTS and c.target not in planned
     ]
+
+    retrievals = [
+        event for event in ctx.deps.tool_log
+        if event.kind is ProvenanceKind.CANDIDATE_RETRIEVAL
+    ]
+    excluded_at_retrieval = (
+        {x.concept_id: x for x in retrievals[-1].exclusions} if retrievals else {}
+    )
+    retrieval_violations = [
+        excluded_at_retrieval[e.concept_id]
+        for e in plan.exercises
+        if e.concept_id in excluded_at_retrieval
+    ]
+
     problems = []
     if avoided:
         problems.append(
@@ -185,6 +211,13 @@ def enforce_declared_constraints(
             f"these declared require exercises appear in no section: "
             f"{[(c.target, c.reason) for c in missing]}. Add them, or if "
             f"impossible, re-declare without them and say why in coach_notes."
+        )
+    if retrieval_violations:
+        problems.append(
+            f"these exercises were excluded at retrieval: "
+            f"{[(x.concept_id, x.cause.value, x.matched_target, x.reason) for x in retrieval_violations]}. "
+            f"Replace them, or re-declare and call get_eligible_exercises "
+            f"again if the coach's intent changed."
         )
     if problems:
         raise ModelRetry(" ".join(problems))

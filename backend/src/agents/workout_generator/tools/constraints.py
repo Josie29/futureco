@@ -112,11 +112,10 @@ def declare_constraints(
     guidance = "This set is in force until your next declaration replaces it."
     if any(not c.target.startswith(f"{Namespace.EXERCISE.value}:") for c in constraints):
         guidance += (
-            " Enforced by validation: avoid/require on exercise targets. "
-            "Muscle, movement-pattern, equipment and anatomy targets are "
-            "directives YOU must honor when composing — no automatic "
-            "expansion through the graph exists yet, so a plan violating "
-            "them will not be auto-rejected."
+            " Broad targets (muscle, movement pattern, equipment, anatomy) "
+            "exclude every matching exercise from get_eligible_exercises, and "
+            "a plan using a retrieval-excluded exercise is rejected - call "
+            "get_eligible_exercises after this declaration."
         )
     return DeclareOutput(
         status="accepted",

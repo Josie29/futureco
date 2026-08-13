@@ -4,6 +4,7 @@ from enum import StrEnum
 from neo4j import Session
 from pydantic import BaseModel, ConfigDict
 
+from catalog.eligibility import Exclusion
 from constraints.diff import ConstraintDiff
 from constraints.models import ConstraintSet
 from graph.vocabulary import Pass
@@ -17,8 +18,8 @@ class ProvenanceKind(StrEnum):
     CONCEPT_RESOLUTION = "concept_resolution"
     MEMBER_SNAPSHOT = "member_snapshot"
     CONSTRAINT_DECLARATION = "constraint_declaration"
-    # Grows with the tool belt: envelope_verdict, candidate_retrieval,
-    # validator_verdict, ...
+    CANDIDATE_RETRIEVAL = "candidate_retrieval"
+    # Grows with the tool belt: envelope_verdict, validator_verdict, ...
 
 
 class ProvenanceEvent(BaseModel):
@@ -42,6 +43,12 @@ class ProvenanceEvent(BaseModel):
     constraint_set: ConstraintSet | None = None
     constraint_diff: ConstraintDiff | None = None
     rejected_targets: tuple[str, ...] = ()
+    candidates: tuple[str, ...] = ()
+    """Eligible ids only — this field, and only this field, widens the
+    citation allowlist."""
+
+    exclusions: tuple[Exclusion, ...] = ()
+    """Never feeds citations; feeds the declared-constraints validator."""
 
 
 @dataclass
