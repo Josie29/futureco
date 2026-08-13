@@ -9,7 +9,10 @@ from agents.workout_generator.agent import (
     enforce_citations,
     enforce_time_budget,
 )
-from agents.workout_generator.agent import enforce_declared_constraints
+from agents.workout_generator.agent import (
+    _safety_problems,
+    enforce_required_exercises,
+)
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
 from agents.workout_generator.tools.constraints import CoachConstraint, declare_constraints
 from catalog.eligibility import Exclusion, ExclusionCause
@@ -199,59 +202,25 @@ def ctx_with_declared(*constraints: Constraint) -> SimpleNamespace:
     return SimpleNamespace(deps=deps)
 
 
-def test_avoided_exercise_is_rejected_wherever_it_hides() -> None:
-    """An avoided exercise bounces the plan, warmup included.
-
-    Without this the coach's "no X" survives only as long as the model
-    remembers it — the declared set would be decoration.
-    """
-    ctx = ctx_with_declared(constraint("exercise:Jump Squat", Effect.AVOID, "no jumping"))
-    with pytest.raises(ModelRetry, match="no jumping"):
-        enforce_declared_constraints(ctx, plan(slot("exercise:X"),
-                                               warmup=(slot("exercise:Jump Squat"),)))
-
-
 def test_required_exercise_missing_bounces_with_the_reason() -> None:
     """A required exercise absent from every section bounces the plan."""
     ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.REQUIRE))
     with pytest.raises(ModelRetry, match="no section"):
-        enforce_declared_constraints(ctx, plan(slot("exercise:Other")))
+        enforce_required_exercises(ctx, plan(slot("exercise:Other")))
 
 
 def test_required_exercise_anywhere_satisfies() -> None:
     """A required exercise counts from any section."""
     ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.REQUIRE))
     p = plan(slot("exercise:Other"), warmup=(slot("exercise:Goblet Squat"),))
-    assert enforce_declared_constraints(ctx, p) is p
+    assert enforce_required_exercises(ctx, p) is p
 
 
-def test_broad_targets_do_not_auto_reject() -> None:
-    """Broad targets alone do not reject a plan at validation time.
-
-    Their enforcement lives at retrieval (matching exercises are excluded
-    and the exclusion records bind the plan); with no retrieval event the
-    validator has nothing to expand against and must not guess.
-    """
-    ctx = ctx_with_declared(
-        constraint("muscle:quads", Effect.AVOID),
-        constraint("movement_pattern:cardio - plyometric", Effect.AVOID),
-    )
-    p = plan(slot("exercise:Anything"))
-    assert enforce_declared_constraints(ctx, p) is p
-
-
-def test_prefer_never_rejects() -> None:
-    """PREFER is a bias, not a gate."""
-    ctx = ctx_with_declared(constraint("exercise:Goblet Squat", Effect.PREFER))
-    p = plan(slot("exercise:Other"))
-    assert enforce_declared_constraints(ctx, p) is p
-
-
-def test_empty_declared_set_passes_everything() -> None:
-    """No declaration, no constraint checks."""
+def test_no_requires_passes_everything() -> None:
+    """No declared requires, no presence checks."""
     ctx = SimpleNamespace(deps=deps_with_log())
     p = plan(slot("exercise:Anything"))
-    assert enforce_declared_constraints(ctx, p) is p
+    assert enforce_required_exercises(ctx, p) is p
 
 
 def _index() -> ConceptIndex:
@@ -397,38 +366,6 @@ def test_retrieval_exclusions_are_never_citable() -> None:
         enforce_citations(ctx, plan(slot("exercise:Jump Squat")))
 
 
-def test_planned_id_in_latest_retrieval_exclusions_bounces() -> None:
-    """A retrieval-excluded exercise cannot be planned via direct resolve.
-
-    Closes the loophole where the model resolves an avoided-pattern
-    exercise by name and plans it — the exercise-prefix validator alone
-    would wave it through.
-    """
-    deps = deps_with_log("exercise:Jump Squat")
-    deps.tool_log.append(
-        retrieval_event(exclusions=(exclusion("exercise:Jump Squat", "no jumping"),))
-    )
-    ctx = SimpleNamespace(deps=deps)
-    with pytest.raises(ModelRetry, match="no jumping"):
-        enforce_declared_constraints(ctx, plan(slot("exercise:Jump Squat")))
-
-
-def test_stale_exclusions_from_older_retrievals_do_not_bounce() -> None:
-    """Only the latest retrieval's exclusions bind the plan.
-
-    After a re-declaration frees an exercise, a stale record from before
-    the change must not deadlock every retry.
-    """
-    deps = deps_with_log("exercise:Jump Squat")
-    deps.tool_log.append(
-        retrieval_event(exclusions=(exclusion("exercise:Jump Squat"),))
-    )
-    deps.tool_log.append(retrieval_event(candidates=("exercise:Jump Squat",)))
-    ctx = SimpleNamespace(deps=deps)
-    p = plan(slot("exercise:Jump Squat"))
-    assert enforce_declared_constraints(ctx, p) is p
-
-
 def test_get_eligible_exercises_logs_one_split_event(monkeypatch) -> None:
     """The tool logs eligible ids and exclusion records in separate fields.
 
@@ -471,3 +408,139 @@ def test_unmatched_requires_warn_in_guidance(monkeypatch) -> None:
     out = ct.get_eligible_exercises(SimpleNamespace(deps=deps))
     assert "exercise:Ghost" in out.guidance
     assert "WARNING" in out.guidance
+
+
+def eligibility_result(
+    eligible: tuple = (), excluded: tuple = (), unmatched: tuple = ()
+):
+    from catalog.eligibility import EligibilityResult
+
+    return EligibilityResult(
+        eligible=eligible, excluded=excluded, unmatched_requires=unmatched
+    )
+
+
+def blocked_exclusion(concept_id: str) -> Exclusion:
+    from graph.evidence import EvidencePath, Hop
+    from graph.schema import NodeLabel, RelType
+
+    return Exclusion(
+        concept_id=concept_id,
+        cause=ExclusionCause.BLOCKED,
+        matched_target="movement_pattern:cardio - plyometric",
+        reason="Impact loading spikes joint reaction force.",
+        evidence=EvidencePath(
+            entry="inj_knee_left",
+            hops=(
+                Hop(rel=RelType.DIAGNOSED_AS, to_label=NodeLabel.CONDITION,
+                    to_name="patellofemoral pain syndrome"),
+                Hop(rel=RelType.CONTRAINDICATES, to_label=NodeLabel.MOVEMENT_PATTERN,
+                    to_name="cardio - plyometric"),
+            ),
+        ),
+    )
+
+
+def eligible_card(concept_id: str, cautions: tuple = ()):
+    from catalog.eligibility import EligibleExercise
+
+    return EligibleExercise(
+        concept_id=concept_id, name=concept_id.split(":")[1],
+        patterns=("movement_pattern:p",), muscles=(), equipment_required=(),
+        missing_equipment=(), joints=(), is_reps=True, is_duration=False,
+        estimated_rep_seconds=4.0, is_bilateral=True, side=None,
+        supports_weight=True, disliked=False, goal_overlap=(),
+        cautions=cautions,
+    )
+
+
+def caution(target: str = "movement_pattern:lower push - squat"):
+    from catalog.eligibility import Caution
+    from graph.evidence import EvidencePath, Hop
+    from graph.schema import NodeLabel, RelType
+
+    return Caution(
+        matched_target=target,
+        reason="Deep flexion under load aggravates the joint.",
+        evidence=EvidencePath(
+            entry="inj_knee_left",
+            hops=(
+                Hop(rel=RelType.DIAGNOSED_AS, to_label=NodeLabel.CONDITION,
+                    to_name="patellofemoral pain syndrome"),
+                Hop(rel=RelType.CAUTIONS, to_label=NodeLabel.MOVEMENT_PATTERN,
+                    to_name=target.split(":")[1]),
+            ),
+        ),
+    )
+
+
+def test_blocked_slot_rejected_with_evidence_in_message() -> None:
+    """A blocked exercise in the plan bounces with the traversal rendered.
+
+    The evidence path is what a coach defends to a physio; a rejection
+    without it is an unexplained no.
+    """
+    result = eligibility_result(excluded=(blocked_exclusion("exercise:Jump Squat"),))
+    problems = _safety_problems(plan(slot("exercise:Jump Squat")), result)
+    (problem,) = problems
+    assert "blocked" in problem
+    assert "inj_knee_left -diagnosed_as-> patellofemoral pain syndrome" in problem
+
+
+def test_cautioned_slot_without_note_rejected() -> None:
+    """A cautioned exercise cannot be planned silently.
+
+    The caution acknowledgment is the coach-facing flag the clinical split
+    exists for — a caution planned without one reads as clear.
+    """
+    result = eligibility_result(
+        eligible=(eligible_card("exercise:Goblet Squat", cautions=(caution(),)),)
+    )
+    problems = _safety_problems(plan(slot("exercise:Goblet Squat")), result)
+    (problem,) = problems
+    assert "caution_note" in problem
+
+
+def test_caution_note_on_uncautioned_slot_rejected() -> None:
+    """Clinical-sounding reassurance on a clean exercise is rejected.
+
+    A caution_note with no caution behind it is fabricated safety prose —
+    exactly the claim the no-clearance rule forbids.
+    """
+    result = eligibility_result(eligible=(eligible_card("exercise:Clean"),))
+    p = plan(
+        PlannedExercise(
+            concept_id="exercise:Clean", label="Clean", sets=3, reps="8",
+            seconds=600, rationale="r", caution_note="kept shallow just in case",
+        )
+    )
+    problems = _safety_problems(p, result)
+    (problem,) = problems
+    assert "no clinical caution" in problem
+
+
+def test_cautioned_slot_with_note_passes() -> None:
+    """An acknowledged caution goes through."""
+    result = eligibility_result(
+        eligible=(eligible_card("exercise:Goblet Squat", cautions=(caution(),)),)
+    )
+    p = plan(
+        PlannedExercise(
+            concept_id="exercise:Goblet Squat", label="GS", sets=3, reps="8",
+            seconds=600, rationale="r",
+            caution_note="Shallow range, light load per the caution.",
+        )
+    )
+    assert _safety_problems(p, result) == []
+
+
+def test_coach_constraint_schema_cannot_utter_block_or_caution() -> None:
+    """The wire schema has no clinical vocabulary.
+
+    If the model could declare BLOCK or CAUTION, it could speak for the
+    clinician — the no-waive-verb invariant, relocated into the schema.
+    """
+    schema = CoachConstraint.model_json_schema()
+    effect = schema["properties"]["effect"]
+    allowed = effect.get("enum") or [effect.get("const")]
+    assert set(allowed) == {"avoid", "prefer", "require"}

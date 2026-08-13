@@ -13,15 +13,16 @@ _NAMESPACE_PREFIXES = tuple(f"{ns.value}:" for ns in Namespace)
 
 class CoachConstraint(BaseModel):
     """One coach directive. Targets are concept_ids from resolve_concept or
-    member_snapshot — never raw text. Origin is not declarable: this tool
-    speaks for the coach only."""
+    member_snapshot — never raw text. Origin is not declarable, and neither
+    is clinical vocabulary: constraints from the chart cannot be declared,
+    weakened, or removed."""
 
     model_config = ConfigDict(frozen=True)
 
     target: str
     """A concept_id (namespace:name) seen this run."""
 
-    effect: Effect
+    effect: Literal[Effect.AVOID, Effect.PREFER, Effect.REQUIRE]
     reason: str
     """The coach's words that motivated it, e.g. "coach said no overhead work"."""
 
@@ -109,12 +110,16 @@ def declare_constraints(
         constraint_diff=changes,
     ))
 
-    guidance = "This set is in force until your next declaration replaces it."
+    guidance = (
+        "This set is in force until your next declaration replaces it. "
+        "Clinical constraints from the chart compose with it automatically "
+        "and cannot be declared, weakened, or removed."
+    )
     if any(not c.target.startswith(f"{Namespace.EXERCISE.value}:") for c in constraints):
         guidance += (
             " Broad targets (muscle, movement pattern, equipment, anatomy) "
             "exclude every matching exercise from get_eligible_exercises, and "
-            "a plan using a retrieval-excluded exercise is rejected - call "
+            "a plan using an excluded exercise is rejected - call "
             "get_eligible_exercises after this declaration."
         )
     return DeclareOutput(

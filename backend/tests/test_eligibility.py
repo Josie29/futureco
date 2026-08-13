@@ -1,6 +1,6 @@
 from catalog.cards import ExerciseCard
 from catalog.eligibility import ExclusionCause, apply
-from constraints.models import Constraint, ConstraintSet, Effect, Origin
+from constraints.models import Constraint, ConstraintSet, Effect, Origin  # noqa: F401
 
 
 def card(
@@ -182,3 +182,113 @@ def test_ordering_is_deterministic() -> None:
     assert [x.concept_id for x in result.excluded] == sorted(
         x.concept_id for x in result.excluded
     )
+
+
+def clinical(target: str, effect: Effect, reason: str = "clinical says") -> Constraint:
+    from graph.evidence import EvidencePath, Hop
+    from graph.schema import NodeLabel, RelType
+
+    return Constraint(
+        target=target, effect=effect, origin=Origin.CLINICAL, reason=reason,
+        evidence=EvidencePath(
+            entry="inj_x",
+            hops=(Hop(rel=RelType.CAUTIONS, to_label=NodeLabel.MOVEMENT_PATTERN,
+                      to_name=target.split(":")[1]),),
+        ),
+    )
+
+
+def test_cause_mapping_covers_every_excluding_effect() -> None:
+    """Every excluding effect has an exclusion cause.
+
+    An effect in EXCLUDING_EFFECTS without a cause mapping would KeyError
+    mid-judgment — a new excluding effect must decide its cause here.
+    """
+    from catalog.eligibility import CAUSE_BY_EFFECT
+    from constraints.models import EXCLUDING_EFFECTS
+
+    assert set(CAUSE_BY_EFFECT) == set(EXCLUDING_EFFECTS)
+
+
+def test_block_on_a_pattern_excludes_with_blocked_cause_and_evidence() -> None:
+    """A clinical block excludes every carrier, evidence attached.
+
+    The BLOCKED cause and the traversal path are what distinguish 'the
+    clinician said no' from 'the coach said no' in every downstream surface.
+    """
+    jumping = card("Jump Squat", patterns=("movement_pattern:plyo",))
+    result = apply((jumping,), declared(clinical("movement_pattern:plyo", Effect.BLOCK)))
+    (record,) = result.excluded
+    assert record.cause is ExclusionCause.BLOCKED
+    assert record.evidence is not None
+    assert record.reason == "clinical says"
+
+
+def test_caution_annotates_survivors_without_excluding() -> None:
+    """A cautioned exercise stays eligible, carrying the caution.
+
+    Hard-excluding cautions would strip the rehab work the protocol wants;
+    the annotation is what obliges the caution_note downstream.
+    """
+    squat = card("Goblet Squat", patterns=("movement_pattern:squat",))
+    result = apply((squat,), declared(clinical("movement_pattern:squat", Effect.CAUTION)))
+    (survivor,) = result.eligible
+    (record,) = survivor.cautions
+    assert record.matched_target == "movement_pattern:squat"
+    assert record.evidence is not None
+    assert result.excluded == ()
+
+
+def test_caution_never_surfaces_on_a_blocked_card() -> None:
+    """A blocked card reports its block, not its cautions."""
+    jumping = card("Jump Squat", patterns=("movement_pattern:plyo",))
+    result = apply(
+        (jumping,),
+        declared(
+            clinical("movement_pattern:plyo", Effect.BLOCK),
+            clinical("movement_pattern:plyo", Effect.CAUTION),
+        ),
+    )
+    assert result.eligible == ()
+    assert all(r.cause is ExclusionCause.BLOCKED for r in result.excluded)
+
+
+def test_require_cannot_resurrect_a_blocked_exercise() -> None:
+    """A coach require never overrides a clinical block.
+
+    The dislike override is coach-over-member authority; extending it to
+    BLOCK would let a request waive a contraindication.
+    """
+    jumping = card("Jump Squat", patterns=("movement_pattern:plyo",))
+    result = apply(
+        (jumping,),
+        declared(
+            clinical("movement_pattern:plyo", Effect.BLOCK),
+            c("exercise:Jump Squat", Effect.REQUIRE, "coach wants it"),
+        ),
+    )
+    assert result.eligible == ()
+    assert result.unmatched_requires == ("exercise:Jump Squat",)
+
+
+def test_coach_avoid_and_clinical_block_yield_two_records() -> None:
+    """Overlapping coach and clinical exclusions each keep their own record.
+
+    Merging them would attribute the clinician's decision to the coach or
+    vice versa — provenance must say who forbade what.
+    """
+    jumping = card("Jump Squat", patterns=("movement_pattern:plyo",))
+    result = apply(
+        (jumping,),
+        declared(
+            clinical("movement_pattern:plyo", Effect.BLOCK),
+            c("movement_pattern:plyo", Effect.AVOID, "coach said no jumping"),
+        ),
+    )
+    assert {r.cause for r in result.excluded} == {
+        ExclusionCause.BLOCKED,
+        ExclusionCause.AVOIDED,
+    }
+    evidences = {r.cause: r.evidence for r in result.excluded}
+    assert evidences[ExclusionCause.BLOCKED] is not None
+    assert evidences[ExclusionCause.AVOIDED] is None

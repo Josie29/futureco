@@ -19,7 +19,8 @@ class ProvenanceKind(StrEnum):
     MEMBER_SNAPSHOT = "member_snapshot"
     CONSTRAINT_DECLARATION = "constraint_declaration"
     CANDIDATE_RETRIEVAL = "candidate_retrieval"
-    # Grows with the tool belt: envelope_verdict, validator_verdict, ...
+    CLINICAL_ENVELOPE = "clinical_envelope"
+    # Grows with the tool belt: validator_verdict, ...
 
 
 class ProvenanceEvent(BaseModel):
@@ -69,6 +70,10 @@ class GeneratorDeps:
     tool_log: list[ProvenanceEvent] = field(default_factory=list)
     declared_constraints: ConstraintSet = field(default_factory=ConstraintSet)
     """The coach-declared set in force, replaced wholesale by
-    declare_constraints. When compose(standing, declared) lands, readers
-    consume the composed set but the declaration diff still runs against
-    this one."""
+    declare_constraints. Readers consume compose(clinical, declared); the
+    declaration diff still runs against this one."""
+
+    clinical_constraints: ConstraintSet = field(default_factory=ConstraintSet)
+    """The chart-derived envelope, loaded once by generate(). The tool path
+    composes with it; enforce_safety deliberately does not trust it and
+    re-loads from the graph."""

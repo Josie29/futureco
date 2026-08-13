@@ -4,6 +4,7 @@ from pydantic_ai import RunContext
 from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
 from catalog.cards import load_cards
 from catalog.eligibility import EligibleExercise, Exclusion, apply
+from constraints.compose import compose
 
 
 class EligibleOutput(BaseModel):
@@ -23,7 +24,9 @@ def get_eligible_exercises(ctx: RunContext[GeneratorDeps]) -> EligibleOutput:
     cause. Eligible concept_ids are plannable as returned. Call after
     declare_constraints, and call again after any re-declaration."""
     cards = load_cards(ctx.deps.graph, ctx.deps.member_id)
-    result = apply(cards, ctx.deps.declared_constraints)
+    result = apply(
+        cards, compose(ctx.deps.clinical_constraints, ctx.deps.declared_constraints)
+    )
     ctx.deps.tool_log.append(
         ProvenanceEvent(
             kind=ProvenanceKind.CANDIDATE_RETRIEVAL,
@@ -34,12 +37,14 @@ def get_eligible_exercises(ctx: RunContext[GeneratorDeps]) -> EligibleOutput:
     )
 
     guidance = (
-        "Eligibility was computed by deterministic code from the declared "
-        "constraints and the member's dislikes, and is enforced by "
-        "validation - a plan using an excluded id is rejected. Eligible does "
-        "NOT mean clinically safe: no safety screening exists yet, so "
-        "injury-consistent selection remains your judgment per the system "
-        "rules. missing_equipment is relative to the member's own equipment "
+        "Eligibility was computed by deterministic code from the clinical "
+        "envelope, the declared constraints and the member's dislikes, and "
+        "is enforced by validation - a plan using an excluded id is "
+        "rejected. Blocked exclusions carry the clinical evidence path and "
+        "are non-negotiable. Cautioned cards are eligible, but every one you "
+        "plan must carry a caution_note saying how the prescription respects "
+        "the caution. Eligible-and-uncautioned is still not a clearance "
+        "claim. missing_equipment is relative to the member's own equipment "
         "- judge whether a substitute implement is acceptable and say so in "
         "the rationale. Re-call this tool after any re-declaration."
     )

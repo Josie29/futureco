@@ -2,6 +2,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from graph.evidence import EvidencePath
+
 
 class Effect(StrEnum):
     """What a constraint asks of the plan."""
@@ -9,22 +11,26 @@ class Effect(StrEnum):
     AVOID = "avoid"
     PREFER = "prefer"
     REQUIRE = "require"
-    # The safety envelope adds BLOCK, CAUTION, LIMIT; clinical exclusions
-    # arrive as BLOCK, and AVOID stays the coach-severity exclusion.
+    BLOCK = "block"
+    """Clinical contraindication: excluding, never coach-declarable."""
+
+    CAUTION = "caution"
+    """Clinical caution: annotates, neither excluding nor requiring."""
+
+    # LIMIT stays deferred — dosage semantics need per-slot enforcement.
 
 
 class Origin(StrEnum):
-    """Who a constraint speaks for. Full enum now so the clinical floor can
-    arrive without reshaping the model; v0 stamps COACH only."""
+    """Who a constraint speaks for."""
 
     CLINICAL = "clinical"
     MEMBER = "member"
     COACH = "coach"
 
 
-EXCLUDING_EFFECTS: frozenset[Effect] = frozenset({Effect.AVOID})
-"""Effects that forbid a target. Validators read this constant, never the
-enum directly — BLOCK joins here with the envelope, call sites unchanged."""
+EXCLUDING_EFFECTS: frozenset[Effect] = frozenset({Effect.AVOID, Effect.BLOCK})
+"""Effects that forbid a target. Validators and eligibility read this
+constant, never the enum directly."""
 
 REQUIRING_EFFECTS: frozenset[Effect] = frozenset({Effect.REQUIRE})
 """Effects that demand a target's presence."""
@@ -43,6 +49,10 @@ class Constraint(BaseModel):
     reason: str = ""
     """The words behind it, e.g. "coach said no overhead work". Carried for
     the trace and retry messages; excluded from diff identity."""
+
+    evidence: EvidencePath | None = None
+    """The traversal that produced it; clinical constraints only, coach
+    constraints carry none. Excluded from key identity like reason."""
 
     @property
     def key(self) -> tuple[str, str, str]:

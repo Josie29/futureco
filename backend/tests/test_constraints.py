@@ -1,5 +1,11 @@
 from constraints.diff import diff
-from constraints.models import Constraint, ConstraintSet, Effect, Origin
+from constraints.models import (
+    REQUIRING_EFFECTS,
+    Constraint,
+    ConstraintSet,
+    Effect,
+    Origin,
+)
 
 
 def c(target: str, effect: Effect = Effect.AVOID, reason: str = "r") -> Constraint:
@@ -88,3 +94,73 @@ def test_set_helpers_filter_by_effect() -> None:
     assert declared.targets(Effect.AVOID, Effect.REQUIRE) == frozenset(
         {"exercise:X", "exercise:Y"}
     )
+
+
+def test_block_is_excluding_and_caution_is_not() -> None:
+    """The effect lattice: BLOCK forbids, CAUTION annotates.
+
+    If CAUTION joined the excluding set, every cautioned rehab exercise
+    would vanish from eligibility — the exact failure the clinical split
+    exists to prevent.
+    """
+    from constraints.models import EXCLUDING_EFFECTS
+
+    assert Effect.BLOCK in EXCLUDING_EFFECTS
+    assert Effect.CAUTION not in EXCLUDING_EFFECTS
+    assert Effect.CAUTION not in REQUIRING_EFFECTS
+
+
+def test_evidence_is_excluded_from_key_identity() -> None:
+    """Two constraints differing only in evidence diff as unchanged."""
+    from graph.evidence import EvidencePath
+
+    before = cs(c("exercise:X"))
+    after = cs(
+        Constraint(
+            target="exercise:X", effect=Effect.AVOID, origin=Origin.COACH,
+            reason="r", evidence=EvidencePath(entry="somewhere"),
+        )
+    )
+    d = diff(before, after)
+    assert d.added == () and d.removed == ()
+
+
+def test_compose_holds_every_clinical_constraint_verbatim() -> None:
+    """No declared set can weaken the clinical floor.
+
+    The monotone floor is the product's central safety claim: coach
+    directives only ever narrow or steer, never unlock.
+    """
+    from constraints.compose import compose
+
+    clinical = cs(
+        Constraint(target="movement_pattern:plyo", effect=Effect.BLOCK,
+                   origin=Origin.CLINICAL, reason="contraindicated"),
+        Constraint(target="movement_pattern:squat", effect=Effect.CAUTION,
+                   origin=Origin.CLINICAL, reason="cautioned"),
+    )
+    adversarial = (
+        cs(),
+        cs(c("movement_pattern:plyo", Effect.PREFER)),
+        cs(c("movement_pattern:plyo", Effect.REQUIRE)),
+        cs(c("movement_pattern:plyo", Effect.AVOID)),
+        cs(c("exercise:Jump Squat", Effect.REQUIRE)),
+    )
+    for declared in adversarial:
+        composed = compose(clinical, declared)
+        for constraint in clinical.constraints:
+            assert constraint in composed.constraints
+
+
+def test_compose_orders_clinical_first() -> None:
+    """Clinical constraints lead the composed set, deterministically."""
+    from constraints.compose import compose
+
+    clinical = cs(
+        Constraint(target="movement_pattern:plyo", effect=Effect.BLOCK,
+                   origin=Origin.CLINICAL, reason="x")
+    )
+    declared = cs(c("exercise:Y"))
+    composed = compose(clinical, declared)
+    assert composed.constraints[0].origin is Origin.CLINICAL
+    assert composed.constraints[-1].origin is Origin.COACH

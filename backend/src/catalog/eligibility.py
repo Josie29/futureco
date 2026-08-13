@@ -9,14 +9,22 @@ from constraints.models import (
     ConstraintSet,
     Effect,
 )
+from graph.evidence import EvidencePath
 
 
 class ExclusionCause(StrEnum):
     """Why an exercise is not eligible."""
 
     AVOIDED = "avoided"
+    BLOCKED = "blocked"
     DISLIKED = "disliked"
-    # The envelope adds BLOCKED; EXCLUDING_EFFECTS growing BLOCK feeds it.
+
+
+CAUSE_BY_EFFECT: dict[Effect, ExclusionCause] = {
+    Effect.AVOID: ExclusionCause.AVOIDED,
+    Effect.BLOCK: ExclusionCause.BLOCKED,
+}
+"""Every excluding effect maps to a cause; a test pins the coverage."""
 
 
 class Exclusion(BaseModel):
@@ -32,13 +40,28 @@ class Exclusion(BaseModel):
     reason: str = ""
     """The constraint's reason verbatim; empty for dislikes."""
 
+    evidence: EvidencePath | None = None
+    """The traversal behind a clinical exclusion; None otherwise."""
+
+
+class Caution(BaseModel):
+    """A clinical caution touching an eligible exercise."""
+
+    model_config = ConfigDict(frozen=True)
+
+    matched_target: str
+    reason: str
+    evidence: EvidencePath | None = None
+
 
 class EligibleExercise(ExerciseCard):
-    """A card that survived, annotated with why the declared set favors it."""
+    """A card that survived, annotated with how the constraint set touches it."""
 
     preferred_because: tuple[str, ...] = ()
     required_because: tuple[str, ...] = ()
-    # Envelope seam: cautions land here as an additive field.
+    cautions: tuple[Caution, ...] = ()
+    """Clinical cautions on this exercise. Planning it requires a caution_note
+    acknowledging each."""
 
 
 class EligibilityResult(BaseModel):
@@ -54,33 +77,27 @@ class EligibilityResult(BaseModel):
     re-declaration."""
 
 
-def apply(cards: tuple[ExerciseCard, ...], declared: ConstraintSet) -> EligibilityResult:
-    """Judge every card against the declared constraint set.
+def apply(cards: tuple[ExerciseCard, ...], constraints: ConstraintSet) -> EligibilityResult:
+    """Judge every card against the composed constraint set.
 
-    Pure and deterministic: exclusion by facet intersection with the
-    excluding effects (the graph expansion, done through the card's own
-    facts), dislike exclusion unless an exact-exercise REQUIRE overrides,
-    one record per hit with no cause arbitration, and PREFER/REQUIRE
-    annotations on survivors.
+    Pure and deterministic. Exclusion is facet intersection with the
+    excluding effects — one record per (constraint, hit), each keeping its
+    own reason and evidence. Dislikes exclude unless an exact-exercise
+    REQUIRE overrides; nothing overrides a BLOCK. Cautions never exclude;
+    they annotate survivors.
 
     Args:
         cards: The catalog, member-annotated.
-        declared: The constraint set in force.
+        constraints: The composed set (clinical + declared) in force.
 
     Returns:
         Eligible cards, every exclusion record, and the REQUIRE targets no
         eligible card can satisfy.
     """
-    excluding = declared.targets(*EXCLUDING_EFFECTS)
-    requiring = declared.targets(*REQUIRING_EFFECTS)
-    preferring = declared.targets(Effect.PREFER)
-    reasons: dict[str, str] = {}
-    for constraint in declared.constraints:
-        if constraint.effect in EXCLUDING_EFFECTS:
-            existing = reasons.get(constraint.target)
-            reasons[constraint.target] = (
-                f"{existing}; {constraint.reason}" if existing else constraint.reason
-            )
+    excluding = [c for c in constraints.constraints if c.effect in EXCLUDING_EFFECTS]
+    cautioning = [c for c in constraints.constraints if c.effect is Effect.CAUTION]
+    requiring = constraints.targets(*REQUIRING_EFFECTS)
+    preferring = constraints.targets(Effect.PREFER)
 
     eligible: list[EligibleExercise] = []
     excluded: list[Exclusion] = []
@@ -88,11 +105,13 @@ def apply(cards: tuple[ExerciseCard, ...], declared: ConstraintSet) -> Eligibili
         records = [
             Exclusion(
                 concept_id=card.concept_id,
-                cause=ExclusionCause.AVOIDED,
-                matched_target=target,
-                reason=reasons[target],
+                cause=CAUSE_BY_EFFECT[constraint.effect],
+                matched_target=constraint.target,
+                reason=constraint.reason,
+                evidence=constraint.evidence,
             )
-            for target in sorted(card.facet_ids & excluding)
+            for constraint in excluding
+            if constraint.target in card.facet_ids
         ]
         if card.disliked and card.concept_id not in requiring:
             records.append(
@@ -110,6 +129,20 @@ def apply(cards: tuple[ExerciseCard, ...], declared: ConstraintSet) -> Eligibili
                 **card.model_dump(),
                 preferred_because=tuple(sorted(card.facet_ids & preferring)),
                 required_because=tuple(sorted(card.facet_ids & requiring)),
+                cautions=tuple(
+                    sorted(
+                        (
+                            Caution(
+                                matched_target=constraint.target,
+                                reason=constraint.reason,
+                                evidence=constraint.evidence,
+                            )
+                            for constraint in cautioning
+                            if constraint.target in card.facet_ids
+                        ),
+                        key=lambda c: c.matched_target,
+                    )
+                ),
             )
         )
 

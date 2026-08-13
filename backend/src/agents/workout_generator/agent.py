@@ -4,9 +4,13 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from agents.workout_generator.belt import toolset
-from agents.workout_generator.deps import GeneratorDeps, ProvenanceKind
-from constraints.models import EXCLUDING_EFFECTS, REQUIRING_EFFECTS
+from agents.workout_generator.deps import GeneratorDeps, ProvenanceEvent, ProvenanceKind
+from catalog.cards import load_cards
+from catalog.eligibility import EligibilityResult, apply
+from constraints.compose import compose
+from constraints.models import REQUIRING_EFFECTS
 from resolver.models import Namespace
+from safety.clinical import load_clinical
 from settings import settings
 
 
@@ -28,6 +32,11 @@ class PlannedExercise(BaseModel):
 
     rationale: str
     """One sentence: why this exercise, for this request."""
+
+    caution_note: str = ""
+    """Required non-empty when this exercise carries a clinical caution: one
+    sentence saying how the prescription respects it (depth, load, volume).
+    Must be empty otherwise. An acknowledgment, not a clearance."""
 
 
 class WorkoutPlan(BaseModel):
@@ -69,10 +78,13 @@ Your graph tools:
 Work like this:
 1. Call member_snapshot first. Plan with the member's own equipment unless
    the coach names other equipment. Never plan a disliked exercise.
-   Injuries are recorded facts, not verdicts: you have no safety tooling,
-   so make no claim that a plan is safe or cleared - prefer work consistent
-   with the injury notes, and say in coach_notes when an injury shaped a
-   choice.
+   Injuries on the chart activate a clinical envelope computed by
+   deterministic code: exercises whose movement patterns a clinician
+   contraindicated are blocked, and a plan using one is rejected with the
+   evidence path. Cautioned exercises stay eligible, but each one you plan
+   must carry a caution_note saying how the prescription respects the
+   caution; leave caution_note empty on every other exercise. None of this
+   is a clearance - never claim a plan is safe or cleared.
 2. Extract every concrete mention from the request - exercises, muscles,
    equipment, body parts, movement patterns - and resolve each one before
    planning.
@@ -163,64 +175,94 @@ def enforce_citations(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> Work
     return plan
 
 
+def _safety_problems(plan: WorkoutPlan, result: EligibilityResult) -> list[str]:
+    """The safety judgment over a finished plan, as retry feedback.
+
+    Pure: the caller re-derives `result` from the graph; this only compares.
+    The caution check verifies an acknowledgment exists, not that its
+    content actually adapts anything — that limit is deliberate and stated.
+    """
+    exclusions_by_id: dict[str, list] = {}
+    for record in result.excluded:
+        exclusions_by_id.setdefault(record.concept_id, []).append(record)
+    cautions_by_id = {card.concept_id: card.cautions for card in result.eligible}
+
+    problems = []
+    for slot in plan.exercises:
+        for record in exclusions_by_id.get(slot.concept_id, []):
+            evidence = f" [{record.evidence.render()}]" if record.evidence else ""
+            problems.append(
+                f"{slot.concept_id} is excluded ({record.cause.value} via "
+                f"{record.matched_target}){evidence} {record.reason}".rstrip()
+                + ". Replace this slot."
+            )
+        cautions = cautions_by_id.get(slot.concept_id, ())
+        if cautions and not slot.caution_note:
+            rendered = "; ".join(
+                c.evidence.render() if c.evidence else c.matched_target for c in cautions
+            )
+            problems.append(
+                f"{slot.concept_id} carries a clinical caution [{rendered}] but "
+                f"no caution_note. Say in caution_note how the prescription "
+                f"respects it - depth, load, or volume."
+            )
+        if not cautions and slot.caution_note:
+            problems.append(
+                f"{slot.concept_id} has a caution_note but carries no clinical "
+                f"caution. Leave caution_note empty; commentary belongs in "
+                f"rationale or coach_notes."
+            )
+    return problems
+
+
 @generator.output_validator
-def enforce_declared_constraints(
-    ctx: RunContext[GeneratorDeps], plan: WorkoutPlan
-) -> WorkoutPlan:
-    """Exercise-target directives are enforced here; broader targets (muscle,
-    pattern, equipment, anatomy) are model-honored until the safety envelope
-    can expand them through the graph.
+def enforce_safety(ctx: RunContext[GeneratorDeps], plan: WorkoutPlan) -> WorkoutPlan:
+    """The deterministic safety re-check over the final plan.
+
+    Re-derives the judgment from the graph — clinical rules and catalog
+    cards loaded fresh, composed with the declared set — trusting nothing
+    the run mutated. Every exclusion cause is enforced here, and every
+    cautioned slot must carry its acknowledgment.
 
     Raises:
-        ModelRetry: If any section uses an avoided exercise, or a required
-            exercise appears in no section.
+        ModelRetry: If any slot is excluded, a cautioned slot lacks a
+            caution_note, or a clean slot carries one.
+    """
+    clinical = load_clinical(ctx.deps.graph, ctx.deps.member_id)
+    cards = load_cards(ctx.deps.graph, ctx.deps.member_id)
+    result = apply(cards, compose(clinical, ctx.deps.declared_constraints))
+    problems = _safety_problems(plan, result)
+    if problems:
+        raise ModelRetry(" ".join(problems))
+    return plan
+
+
+@generator.output_validator
+def enforce_required_exercises(
+    ctx: RunContext[GeneratorDeps], plan: WorkoutPlan
+) -> WorkoutPlan:
+    """Every declared exercise-level require appears in some section.
+
+    Presence is not an exclusion, so enforce_safety does not cover it.
+
+    Raises:
+        ModelRetry: If a required exercise appears in no section.
     """
     planned = {e.concept_id for e in plan.exercises}
     prefix = f"{Namespace.EXERCISE.value}:"
-    declared = [
-        c for c in ctx.deps.declared_constraints.constraints
-        if c.target.startswith(prefix)
-    ]
-
-    avoided = [c for c in declared if c.effect in EXCLUDING_EFFECTS and c.target in planned]
     missing = [
-        c for c in declared if c.effect in REQUIRING_EFFECTS and c.target not in planned
+        c
+        for c in ctx.deps.declared_constraints.constraints
+        if c.effect in REQUIRING_EFFECTS
+        and c.target.startswith(prefix)
+        and c.target not in planned
     ]
-
-    retrievals = [
-        event for event in ctx.deps.tool_log
-        if event.kind is ProvenanceKind.CANDIDATE_RETRIEVAL
-    ]
-    excluded_at_retrieval = (
-        {x.concept_id: x for x in retrievals[-1].exclusions} if retrievals else {}
-    )
-    retrieval_violations = [
-        excluded_at_retrieval[e.concept_id]
-        for e in plan.exercises
-        if e.concept_id in excluded_at_retrieval
-    ]
-
-    problems = []
-    if avoided:
-        problems.append(
-            f"the plan uses exercises declared avoid: "
-            f"{[(c.target, c.reason) for c in avoided]}. Replace these slots."
-        )
     if missing:
-        problems.append(
+        raise ModelRetry(
             f"these declared require exercises appear in no section: "
             f"{[(c.target, c.reason) for c in missing]}. Add them, or if "
             f"impossible, re-declare without them and say why in coach_notes."
         )
-    if retrieval_violations:
-        problems.append(
-            f"these exercises were excluded at retrieval: "
-            f"{[(x.concept_id, x.cause.value, x.matched_target, x.reason) for x in retrieval_violations]}. "
-            f"Replace them, or re-declare and call get_eligible_exercises "
-            f"again if the coach's intent changed."
-        )
-    if problems:
-        raise ModelRetry(" ".join(problems))
     return plan
 
 
@@ -261,6 +303,14 @@ async def generate(coach_prompt: str, deps: GeneratorDeps) -> WorkoutPlan:
     Returns:
         The validated plan.
     """
+    deps.clinical_constraints = load_clinical(deps.graph, deps.member_id)
+    deps.tool_log.append(
+        ProvenanceEvent(
+            kind=ProvenanceKind.CLINICAL_ENVELOPE,
+            member=deps.member_id,
+            constraint_set=deps.clinical_constraints,
+        )
+    )
     prompt = (
         f"Coach request: {coach_prompt}\n"
         f"Session window: {deps.duration_min} minutes."
