@@ -83,12 +83,14 @@ ENV PATH=/opt/venv/bin:$PATH \
     MODEL_CACHE_DIR=${MODEL_CACHE_DIR} \
     CONSOLE_DIR=/app/web/dist
 
-# The model name is written twice — once as a build argument above, once as a
-# constant in the source. Assert they agree, so a change to one that misses the
-# other fails the build instead of silently re-downloading at first request.
+# The model name is written three times — the build argument above and a
+# constant in each module that embeds. Assert they all agree, so a change to
+# one that misses the others fails the build instead of silently
+# re-downloading at first request.
 RUN python -c "\
-from resolve.vocabulary import EMBEDDING_MODEL; \
-assert EMBEDDING_MODEL == '${EMBEDDING_MODEL}', EMBEDDING_MODEL"
+from graph.vocabulary import EMBEDDING_MODEL as build_model; \
+from resolver.index import EMBEDDING_MODEL as resolver_model; \
+assert build_model == resolver_model == '${EMBEDDING_MODEL}', (build_model, resolver_model)"
 
 USER app
 

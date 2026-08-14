@@ -46,10 +46,15 @@ CREATE TABLE IF NOT EXISTS plan_runs (
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Agentic migration: this table's columns changed twice (instructions/
--- emphasis dropped, then declared_constraints/message_history/plan added).
--- CREATE IF NOT EXISTS will not alter an existing table — reset a
--- pre-migration local Postgres volume rather than migrating a dev-only store.
+-- Agentic migration, applied in place: a pre-migration volume carries the
+-- old instructions/emphasis columns (NOT NULL, no default), which would
+-- reject every insert. Idempotent ALTERs converge an old table onto the
+-- shape above; a fresh volume is a no-op.
+ALTER TABLE plan_runs DROP COLUMN IF EXISTS instructions;
+ALTER TABLE plan_runs DROP COLUMN IF EXISTS emphasis;
+ALTER TABLE plan_runs ADD COLUMN IF NOT EXISTS declared_constraints JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE plan_runs ADD COLUMN IF NOT EXISTS message_history JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE plan_runs ADD COLUMN IF NOT EXISTS plan JSONB;
 
 CREATE INDEX IF NOT EXISTS plan_runs_parent_idx ON plan_runs (parent_run_id);
 """
