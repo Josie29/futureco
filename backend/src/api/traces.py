@@ -6,12 +6,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from agent.extract import Extraction
 from copilot.agent import MODEL, RunResult
 from copilot.tools import QueryRecord
-from graph.recording import QueryRecord as GeneratorQuery
-from graph.recording import RunRecorder
-from plan.pipeline import GeneratedPlan
 
 # Observability over the agentic runtime (ASSESSMENT.md:134).
 #
@@ -159,55 +155,33 @@ class InMemoryTraceStore:
         return next((run for run in self._runs if run.run_id == run_id), None)
 
 
-# What each pipeline stage is doing, for the waterfall's labels. Kinds are
-# coarse on purpose: `SpanKind` has five members because those are the five
-# things worth telling apart when a run is slow or wrong.
-STAGE_KINDS: dict[str, SpanKind] = {
-    "load_standing": SpanKind.GRAPH,
-    "resolve_directives": SpanKind.RESOLVE,
-    "compose": SpanKind.TOOL,
-    "filter": SpanKind.GRAPH,
-    "movement_facts": SpanKind.GRAPH,
-    "substitute": SpanKind.GRAPH,
-    "resolve_focus": SpanKind.RESOLVE,
-    "pack": SpanKind.TOOL,
-    "fingerprint": SpanKind.GRAPH,
+from agents.workout_generator.agent import Usage
+from agents.workout_generator.deps import ProvenanceEvent, ProvenanceKind
+
+_EVENT_KINDS: dict[ProvenanceKind, SpanKind] = {
+    ProvenanceKind.CONCEPT_RESOLUTION: SpanKind.RESOLVE,
+    ProvenanceKind.MEMBER_SNAPSHOT: SpanKind.GRAPH,
+    ProvenanceKind.CANDIDATE_RETRIEVAL: SpanKind.GRAPH,
+    ProvenanceKind.CLINICAL_ENVELOPE: SpanKind.GRAPH,
+    ProvenanceKind.CONSTRAINT_DECLARATION: SpanKind.TOOL,
 }
 
 
-def _fold(records: list[GeneratorQuery]) -> list[tuple[GeneratorQuery, int]]:
-    """Collapse repeated reads of one query into a single row.
-
-    `PATTERN_SIBLINGS` runs once per dropped movement and the graph
-    fingerprint once per label, so an unfolded waterfall is thirty rows of the
-    same two queries. Folded, each keeps its first offset and carries the
-    summed duration, summed rows and the number of calls — which is the figure
-    worth seeing anyway.
-    """
-    order: list[str] = []
-    grouped: dict[str, list[GeneratorQuery]] = {}
-    for record in records:
-        if record.name not in grouped:
-            order.append(record.name)
-            grouped[record.name] = []
-        grouped[record.name].append(record)
-
-    folded = []
-    for name in order:
-        calls = grouped[name]
-        first = calls[0]
-        folded.append(
-            (
-                first.model_copy(
-                    update={
-                        "duration_ms": round(sum(c.duration_ms for c in calls), 2),
-                        "rows": sum(c.rows for c in calls),
-                    }
-                ),
-                len(calls),
-            )
-        )
-    return folded
+def _event_attributes(event: ProvenanceEvent) -> list[SpanAttribute]:
+    pairs: list[tuple[str, str]] = []
+    if event.query:
+        pairs.append(("query", event.query))
+    if event.concept:
+        pairs.append(("concept", event.concept))
+    if event.candidates:
+        pairs.append(("eligible", str(len(event.candidates))))
+    if event.exclusions:
+        pairs.append(("excluded", str(len(event.exclusions))))
+    if event.constraint_set:
+        pairs.append(("constraints", str(len(event.constraint_set.constraints))))
+    if event.rejected_targets:
+        pairs.append(("rejected", str(len(event.rejected_targets))))
+    return [SpanAttribute(label=label, value=value) for label, value in pairs]
 
 
 def build_generator_trace(
@@ -215,46 +189,17 @@ def build_generator_trace(
     prompt: str,
     started_at: datetime,
     duration_ms: float,
-    recorder: RunRecorder,
-    extraction: Extraction,
-    generated: GeneratedPlan,
+    tool_log: list[ProvenanceEvent],
+    usage: Usage,
 ) -> RunTrace:
-    """Turn one plan generation into a trace.
+    """Turn one generation's tool log into a trace.
 
-    Every offset here is measured rather than reconstructed: `RunRecorder`
-    hands the stages and the graph reads one clock, so a read appears under the
-    stage that actually issued it and the waterfall is the run's real shape.
-
-    Args:
-        run_id: Identifier for the run.
-        prompt: What the coach asked for, in their words.
-        started_at: When the run began.
-        duration_ms: End-to-end wall time, including extraction.
-        recorder: The stage and query account the pipeline filled in.
-        extraction: What the model produced, and what it cost.
-        generated: The finished plan, read for what did not apply.
-
-    Returns:
-        The assembled trace, degraded when part of the request did not land.
+    Deliberately coarse: one root span with the wall time and one
+    zero-duration child per provenance event. The decision detail lives on
+    the plan response; per-tool timings arrive with richer instrumentation.
     """
     ids = (f"sp_{n}" for n in itertools.count(1))
     root_id = next(ids)
-
-    # A run is degraded when the coach asked for something the plan does not
-    # reflect. All three are silent by default, which is exactly why they are
-    # the status: a plan that quietly ignored a constraint looks like one that
-    # applied it.
-    unapplied = generated.composition.unapplied
-    unresolved_focus = [r for r in generated.focus if r.match is None]
-    shortfalls = []
-    if unapplied:
-        shortfalls.append(f"{len(unapplied)} directive(s) not applied")
-    if unresolved_focus:
-        shortfalls.append(f"{len(unresolved_focus)} emphasis phrase(s) unresolved")
-    if extraction.result.unmapped:
-        shortfalls.append(f"{len(extraction.result.unmapped)} phrase(s) heard but unmapped")
-    status = SpanStatus.DEGRADED if shortfalls else SpanStatus.OK
-
     spans = [
         TraceSpan(
             id=root_id,
@@ -262,100 +207,36 @@ def build_generator_trace(
             kind=SpanKind.AGENT,
             name="plan.generate",
             started_ms=0.0,
-            duration_ms=duration_ms,
-            status=status,
-            attributes=[
-                SpanAttribute(label="member", value=generated.member_id),
-                SpanAttribute(label="requested minutes", value=str(generated.requested_minutes)),
-                SpanAttribute(label="catalogue", value=str(len(generated.trace.result.verdicts))),
-                SpanAttribute(label="eligible", value=str(generated.trace.result.attribution.kept)),
-                SpanAttribute(label="prescribed", value=str(len(generated.plan.blocks))),
-                SpanAttribute(label="substitutions", value=str(len(generated.substitutions))),
-                SpanAttribute(
-                    label="parent run", value=generated.parent_run_id or "none — a fresh build"
-                ),
-            ],
-            note="; ".join(shortfalls) or None,
+            duration_ms=round(duration_ms, 2),
+            status=SpanStatus.OK,
+            attributes=[SpanAttribute(label="tool events", value=str(len(tool_log)))],
         )
     ]
-
-    if extraction.model:
-        spans.append(
-            TraceSpan(
-                id=next(ids),
-                parent_id=root_id,
-                kind=SpanKind.LLM,
-                name="extract",
-                started_ms=0.0,
-                duration_ms=extraction.duration_ms,
-                status=SpanStatus.OK,
-                attributes=[
-                    SpanAttribute(
-                        label="instructions", value=str(len(extraction.result.instructions))
-                    ),
-                    SpanAttribute(label="emphasis", value=str(len(extraction.result.emphasis))),
-                    SpanAttribute(label="unmapped", value=str(len(extraction.result.unmapped))),
-                ],
-                model=extraction.model,
-                tokens_in=extraction.tokens_in,
-                tokens_out=extraction.tokens_out,
-            )
+    spans.extend(
+        TraceSpan(
+            id=next(ids),
+            parent_id=root_id,
+            kind=_EVENT_KINDS[event.kind],
+            name=event.kind.value,
+            started_ms=0.0,
+            duration_ms=0.0,
+            status=SpanStatus.OK,
+            attributes=_event_attributes(event),
         )
-
-    # Extraction runs before the pipeline, so every recorded offset sits after
-    # it. Shifting here rather than starting the recorder earlier keeps the
-    # pipeline unaware of what preceded it.
-    shift = extraction.duration_ms
-
-    for stage in recorder.stages:
-        stage_id = next(ids)
-        ends = stage.started_ms + stage.duration_ms
-        spans.append(
-            TraceSpan(
-                id=stage_id,
-                parent_id=root_id,
-                kind=STAGE_KINDS.get(stage.name, SpanKind.TOOL),
-                name=stage.name,
-                started_ms=round(stage.started_ms + shift, 2),
-                duration_ms=stage.duration_ms,
-                status=SpanStatus.OK,
-            )
-        )
-        inside = [q for q in recorder.queries if stage.started_ms <= q.started_ms < ends]
-        for record, calls in _fold(inside):
-            spans.append(
-                TraceSpan(
-                    id=next(ids),
-                    parent_id=stage_id,
-                    kind=SpanKind.GRAPH,
-                    name=record.name,
-                    started_ms=round(record.started_ms + shift, 2),
-                    duration_ms=record.duration_ms,
-                    status=SpanStatus.OK,
-                    attributes=(
-                        [SpanAttribute(label="calls", value=str(calls))] if calls > 1 else []
-                    )
-                    + [
-                        SpanAttribute(label=key, value=str(value))
-                        for key, value in record.params.items()
-                    ],
-                    query=record.cypher,
-                    rows_returned=record.rows,
-                )
-            )
-
+        for event in tool_log
+    )
     return RunTrace(
         run_id=run_id,
         source="generator",
         prompt=prompt,
         started_at=started_at.astimezone(UTC).isoformat(),
         duration_ms=round(duration_ms, 2),
-        status=status,
+        status=SpanStatus.OK,
         totals=RunTotals(
-            graph_queries=len(recorder.queries),
-            llm_calls=1 if extraction.model else 0,
-            tokens_in=extraction.tokens_in,
-            tokens_out=extraction.tokens_out,
+            graph_queries=0,
+            llm_calls=usage.llm_calls,
+            tokens_in=usage.tokens_in,
+            tokens_out=usage.tokens_out,
         ),
         spans=spans,
     )

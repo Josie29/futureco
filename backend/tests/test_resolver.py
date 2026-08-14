@@ -2,142 +2,167 @@ import pytest
 
 from graph.driver import graph_session
 from graph.schema import NodeLabel
-from resolve.cases import ResolverCase, load_cases
-from resolve.normalize import Side, normalize
-from resolve.resolver import Pass, Reason, Resolver
-from resolve.vocabulary import Vocabulary
-from settings import settings
-
-CASES = load_cases(settings.resolver_cases_path)
+from graph.vocabulary import Pass
+from resolver.core import Thresholds, norm, resolve
+from resolver.index import ConceptIndex
+from resolver.models import NAMESPACE_LABELS, UNRESOLVABLE_KG1_LABELS, Namespace
 
 
 @pytest.fixture(scope="session")
-def resolver() -> Resolver:
-    """A resolver over the live graph's vocabulary.
+def index() -> ConceptIndex:
+    """An index over the live graph's vocabulary.
 
-    Session-scoped because loading the vocabulary and the embedding model is
-    the slow part; resolution itself is in-memory.
+    Session-scoped because loading the index and the embedding model is the
+    slow part; resolution itself is in-memory.
     """
     with graph_session() as session:
-        vocabulary = Vocabulary.load(session, settings.aliases_path)
-    return Resolver(vocabulary)
+        return ConceptIndex.load(session)
 
 
-@pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.term}->{c.expects}")
-def test_labelled_case(resolver: Resolver, case: ResolverCase) -> None:
-    """Every labelled case resolves as recorded.
+def test_exact_match_is_certain(index: ConceptIndex) -> None:
+    """A canonical name resolves to itself at full confidence.
 
-    Breaks if a threshold is retuned without re-running the calibration, or if
-    an alias is removed that an automatic pass cannot replace. The same file
-    drives resolve.calibrate, so the numbers and these assertions cannot drift.
+    The floor of the whole resolver: if "knee" cannot reach knee, no coach
+    term reaches anything.
     """
-    result = resolver.resolve(case.term, case.labels)
-    got = result.match.name if result.match else None
-    assert got == case.expects, f"{case.note}\ncandidates: {result.candidates}"
-    if case.expects_side is not None:
-        assert result.side == case.expects_side
+    result = resolve("knee", Namespace.ANATOMY, index)
+    assert result.resolved is not None
+    assert result.resolved.label == "knee"
+    assert result.resolved.method is Pass.EXACT
+    assert result.resolved.confidence == 1.0
 
 
-def test_declining_still_offers_candidates(resolver: Resolver) -> None:
-    """A term that cannot resolve still reports what was close.
+def test_exact_match_survives_case_and_hyphens(index: ConceptIndex) -> None:
+    """Normalisation bridges casing and hyphenation, nothing more.
 
-    Breaks the copilot's ability to ask "did you mean...?" — without this a
-    coach who mistypes gets a dead end rather than a choice.
+    "Kettlebell" typed lowercase must still be an exact hit — if it fell
+    through to fuzzy, every well-typed term would carry a sub-1.0 confidence
+    and the tool would flag clean matches as shaky.
     """
-    result = resolver.resolve("deadlift")
-    assert not result.resolved
-    assert result.reason is Reason.BELOW_THRESHOLD
-    assert result.candidates, "a failed resolve must still rank near-misses"
+    result = resolve("Kettlebell", Namespace.EQUIPMENT, index)
+    assert result.resolved is not None
+    assert result.resolved.method is Pass.EXACT
+    assert result.resolved.confidence == 1.0
 
 
-def test_label_restriction_changes_the_answer(resolver: Resolver) -> None:
-    """The same words reach different concepts depending on the caller's intent.
+def test_typo_resolves_through_the_fuzzy_pass(index: ConceptIndex) -> None:
+    """A near-miss spelling still reaches the concept, marked as fuzzy.
 
-    This is the whole reason callers pass labels. If restriction stopped
-    working, "bad lower back" in an injury context would silently return a
-    muscle, and the safety filter would walk the wrong part of the graph.
+    A coach's "kettlebel" must not dead-end — and provenance must say the
+    match was approximate, not certain.
     """
-    muscle = resolver.resolve("lower back", frozenset({NodeLabel.MUSCLE}))
-    anatomy = resolver.resolve("lower back", frozenset({NodeLabel.ANATOMICAL_STRUCTURE}))
-    assert muscle.match is not None and muscle.match.label is NodeLabel.MUSCLE
-    assert anatomy.match is not None and anatomy.match.name == "lumbar spine"
-
-    unrestricted = resolver.resolve("lower back")
-    assert not unrestricted.resolved
-    assert unrestricted.reason is Reason.AMBIGUOUS
+    result = resolve("kettlebel", Namespace.EQUIPMENT, index)
+    assert result.resolved is not None
+    assert result.resolved.label == "Kettlebell"
+    assert result.resolved.method is Pass.FUZZY
+    assert result.resolved.confidence < 1.0
 
 
-def test_restriction_filters_before_scoring(resolver: Resolver) -> None:
-    """A restricted call cannot be dragged off by a wrong-label near-match.
+def test_unknown_term_declines_with_near_misses(index: ConceptIndex) -> None:
+    """A term the catalog cannot honestly claim declines, offering what's close.
 
-    "squats" scores highly against the Muscle `quads`. Filtering the pool after
-    scoring rather than before would let that win and then be discarded,
-    leaving nothing — or worse, be returned.
+    "deadlift" is not in the catalog; latching onto a similar-sounding
+    exercise would put a movement in a plan nobody vetted. The near-misses
+    are what lets the agent tell the coach what it can offer instead.
     """
-    result = resolver.resolve("squats", frozenset({NodeLabel.MUSCLE}))
-    assert not result.resolved
-    assert all(c.label is NodeLabel.MUSCLE for c in result.candidates)
+    result = resolve("deadlift", Namespace.EXERCISE, index)
+    assert result.resolved is None
+    assert result.alternatives, "a failed resolve must still rank near-misses"
 
 
-def test_every_pass_is_exercised(resolver: Resolver) -> None:
-    """The labelled set covers all four passes.
+def test_namespace_restriction_changes_the_pool(index: ConceptIndex) -> None:
+    """A scoped call never returns a concept of the wrong kind.
 
-    Guards against a pass quietly becoming dead weight. Calibration found the
-    vector pass firing on nothing until three cases were added specifically for
-    it; without this test that could recur unnoticed.
+    If scoping leaked, an equipment term could resolve into the exercise
+    catalog and the downstream graph tools would traverse from the wrong
+    node type.
     """
-    fired = {
-        resolver.resolve(case.term, case.labels).match.matched_by
-        for case in CASES
-        if case.expects is not None
-    }
-    assert fired == set(Pass), f"no labelled case exercises {set(Pass) - fired}"
+    result = resolve("lower back", Namespace.MUSCLE, index)
+    assert result.resolved is not None
+    assert result.resolved.namespace is Namespace.MUSCLE
+    anatomy = resolve("lower back", Namespace.ANATOMY, index)
+    assert anatomy.resolved is None or anatomy.resolved.namespace is Namespace.ANATOMY
 
 
-def test_empty_after_normalization_declines(resolver: Resolver) -> None:
-    """Input that is all filler declines rather than raising or matching."""
-    result = resolver.resolve("my really bad pain")
-    assert not result.resolved
-    assert result.reason is Reason.EMPTY
+def test_same_namespace_tie_declines_with_all_readings(index: ConceptIndex) -> None:
+    """Candidates too close to separate come back as a tie, not a coin toss.
 
-
-def test_impossible_restriction_declines(resolver: Resolver) -> None:
-    """An empty candidate pool returns cleanly instead of raising."""
-    result = resolver.resolve("knee", frozenset({NodeLabel.CONDITION}))
-    assert not result.resolved
-    assert result.reason is Reason.NO_POOL
-
-
-def test_filler_words_are_not_canonical_terms(resolver: Resolver) -> None:
-    """No filler word is itself a concept name.
-
-    Stripping filler is only safe while none of it is a term someone might
-    mean. If a future catalog adds an exercise called "Flare", say, this fails
-    rather than silently making that exercise unreachable.
+    "press" token-matches every pressing exercise equally; picking one
+    silently would put an arbitrary movement in the plan. The alternatives
+    feed the tool's ambiguous status so the model can choose with context
+    or ask.
     """
-    from resolve.normalize import _FILLER
+    result = resolve("press", Namespace.EXERCISE, index)
+    assert result.resolved is None
+    assert len(result.alternatives) >= 2
+    top_two = result.alternatives[:2]
+    assert abs(top_two[0].confidence - top_two[1].confidence) < 0.05
 
-    names = {concept.normalized for concept in resolver.vocabulary.concepts}
-    assert not (_FILLER & names)
 
+def test_vector_pass_reaches_meaning(index: ConceptIndex) -> None:
+    """When spelling fails, embeddings still rank the right concept first.
 
-@pytest.mark.parametrize(
-    ("term", "expected_text", "expected_side"),
-    [
-        ("her left knee is bothering her", "knee", Side.LEFT),
-        ("RIGHT Shoulder", "shoulder", Side.RIGHT),
-        ("knee", "knee", None),
-        ("Resistance Band - Loop", "resistance band loop", None),
-    ],
-)
-def test_normalization(term: str, expected_text: str, expected_side: Side | None) -> None:
-    """Laterality survives normalisation and separators become spaces.
-
-    Side is load-bearing downstream: the recorded injury is left-sided, so a
-    right-knee complaint must not match it. Separators becoming spaces rather
-    than being deleted is what keeps token-set matching working on names like
-    "Resistance Band - Loop".
+    Forcing the fuzzy pass off proves the vector pass works end to end —
+    the pass that will carry paraphrases once thresholds are re-swept.
     """
-    result = normalize(term)
-    assert result.text == expected_text
-    assert result.side == expected_side
+    floors = Thresholds(fuzzy=1.01, vector=0.0, ambiguity_margin=0.0)
+    result = resolve("kettlebel", Namespace.EQUIPMENT, index, floors)
+    assert result.resolved is not None
+    assert result.resolved.method is Pass.VECTOR
+    assert result.resolved.label == "Kettlebell"
+
+
+def test_empty_term_resolves_to_nothing(index: ConceptIndex) -> None:
+    """Input that normalises to nothing declines cleanly instead of scoring.
+
+    Scoring an empty string would hand the fuzzy pass whatever concept
+    happens to rank highest on noise.
+    """
+    result = resolve("  -  ", None, index)
+    assert result.resolved is None
+    assert result.alternatives == ()
+
+
+def test_every_kg1_label_is_namespaced_or_deliberately_not() -> None:
+    """Every KG1 node type is inside a namespace or explicitly excluded.
+
+    Catches the silent gap where a new node type is added to the graph and
+    coach terms can never reach it — or worse, a clinical label becomes
+    resolvable without anyone deciding it should be.
+    """
+    with graph_session() as session:
+        rows = session.run(
+            "MATCH (n) WHERE n.source = 'kg1' UNWIND labels(n) AS l RETURN DISTINCT l"
+        )
+        live = {NodeLabel(row["l"]) for row in rows}
+    namespaced = {label for labels in NAMESPACE_LABELS.values() for label in labels}
+    assert namespaced & UNRESOLVABLE_KG1_LABELS == frozenset(), (
+        "a label cannot be both resolvable and excluded"
+    )
+    assert live == namespaced | UNRESOLVABLE_KG1_LABELS, (
+        f"undecided KG1 labels: {sorted(live ^ (namespaced | UNRESOLVABLE_KG1_LABELS))}"
+    )
+
+
+def test_norm_is_minimal() -> None:
+    """Normalisation bridges casing, hyphens and whitespace — nothing else.
+
+    Filler words and laterality are the extracting model's job now; if norm
+    started eating tokens again, extraction and resolution would fight over
+    who owns cleanup.
+    """
+    assert norm("  Push-Up  to   Knee-Drive ") == "push up to knee drive"
+    assert norm("her left knee") == "her left knee"
+
+
+def test_has_checks_referential_integrity(index: ConceptIndex) -> None:
+    """has() answers exactly "is this id real currency".
+
+    Constraint targets and any future id arriving from outside the resolver
+    are gated on this; a false positive would let a directive point at
+    nothing, a false negative would reject the snapshot's own ids.
+    """
+    assert index.has("anatomy:knee")
+    assert not index.has("muscle:knee")
+    assert not index.has("exercise:Invented Movement")
+    assert not index.has("knee")

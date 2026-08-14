@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from neo4j.exceptions import AuthError, Neo4jError, ServiceUnavailable
+from pydantic_ai.exceptions import UnexpectedModelBehavior, UserError
 
 from settings import settings
 
@@ -40,8 +41,29 @@ async def handle_neo4j(request: Request, exc: Neo4jError) -> JSONResponse:
     )
 
 
+async def handle_agent_config(request: Request, exc: UserError) -> JSONResponse:
+    """Report a missing model configuration as configuration, not a fault."""
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "The planning agent is not configured to reach a model.",
+            "remedy": "Set ANTHROPIC_API_KEY in .env and restart.",
+        },
+    )
+
+
+async def handle_agent_failure(
+    request: Request, exc: UnexpectedModelBehavior
+) -> JSONResponse:
+    """Surface an exhausted agent run instead of a bare 500."""
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={"detail": f"The planning agent could not produce a valid plan: {exc}"},
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
-    """Attach the database-failure handlers to an app.
+    """Attach the database and agent failure handlers to an app.
 
     Args:
         app: The application to register against.
@@ -49,3 +71,5 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ServiceUnavailable, handle_unavailable)  # type: ignore[arg-type]
     app.add_exception_handler(AuthError, handle_auth)  # type: ignore[arg-type]
     app.add_exception_handler(Neo4jError, handle_neo4j)  # type: ignore[arg-type]
+    app.add_exception_handler(UserError, handle_agent_config)  # type: ignore[arg-type]
+    app.add_exception_handler(UnexpectedModelBehavior, handle_agent_failure)  # type: ignore[arg-type]

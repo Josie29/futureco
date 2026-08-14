@@ -1,209 +1,200 @@
-from datetime import datetime
-from enum import StrEnum
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
-
-from graph.schema import NodeLabel
-from plan.schemas import Reason, Section
-from resolve.resolver import Pass
-from safety.evidence import EvidencePath, SignalKind
-
-# Every model here mirrors a declaration in `web/src/types/index.ts`. The
-# console is built against that file, so this module is a projection of the
-# plan package onto it and holds no logic of its own — a difference between
-# the two is a bug here, not a feature there.
-
-
-class VerdictLabel(StrEnum):
-    """How a movement fared, as the console renders it.
-
-    Coarser than `Status`: the console needs to know whether to mark a block
-    cautioned, not what the penalty totalled.
-    """
-
-    EXCLUDED = "excluded"
-    CAUTION = "caution"
-    CLEARED = "cleared"
-
-
-class FilterCause(StrEnum):
-    """The bucket a dropped movement is grouped under.
-
-    Deliberately coarser than `ReasonKind` — a coach reads five groups, not
-    twelve. `OUT_OF_SCOPE` has no `SignalKind` behind it and so is currently
-    unreachable; it is declared to match the console rather than dropped,
-    because the mapping is the console's contract and not ours to narrow.
-    """
-
-    INJURY = "injury"
-    EQUIPMENT = "equipment"
-    DISLIKE = "dislike"
-    EXCLUSION = "exclusion"
-    OUT_OF_SCOPE = "out_of_scope"
-
-
-CAUSE_OF: dict[SignalKind, FilterCause] = {
-    SignalKind.CONTRAINDICATION: FilterCause.INJURY,
-    SignalKind.MISSING_EQUIPMENT: FilterCause.EQUIPMENT,
-    SignalKind.DISLIKE: FilterCause.DISLIKE,
-    SignalKind.COACH_EXCLUSION: FilterCause.EXCLUSION,
-}
-
-
-class ConceptIntent(StrEnum):
-    """What a resolved phrase was meant to do to the catalog."""
-
-    FOCUS = "focus"
-    EXCLUDE = "exclude"
-    PROTECT = "protect"
-
-
-class MuscleTag(BaseModel):
-    """A muscle a movement trains, and why it is worth pointing at.
-
-    Two independent flags rather than one three-valued field: a muscle can be
-    both a standing goal's target and this request's emphasis, and the console
-    decides which to render rather than the wire deciding for it.
-    """
-
-    name: str
-    is_goal_target: bool
-    is_focus: bool = False
-    """Whether this request asked to emphasise it. Defaults false so a plan
-    built with no emphasis serialises exactly as it did before."""
-
-
-class PlanExercise(BaseModel):
-    """One movement as scheduled, with everything needed to render and defend it."""
-
-    id: str
-    name: str
-    block: Section
-    sets: int | None
-    reps: int | None
-    duration_sec: int | None
-    rest_sec: int | None
-    per_side: bool
-    minutes: float
-    muscles: list[MuscleTag]
-    equipment: list[str]
-    verdict: VerdictLabel
-    note: str | None
-    why: list[Reason]
-
-
-class FilteredExercise(BaseModel):
-    """One movement the filter removed, and the traversal that removed it."""
-
-    id: str
-    name: str
-    cause: FilterCause
-    detail: str
-    path: EvidencePath
-
-
-class ResolvedConcept(BaseModel):
-    """A phrase the resolver landed on a canonical concept."""
-
-    phrase: str
-    label: NodeLabel
-    concept_id: str
-    """`label:name`, matching the console's mock. Only `Exercise` is keyed by
-    an id in the graph; everything else is keyed by name, so a synthetic
-    composite is the one form that works for all of them."""
-
-    concept_name: str
-    pass_: Pass = Field(serialization_alias="pass")
-    confidence: float
-    intent: ConceptIntent
-    side: str | None
-
-
-class UnresolvedPhrase(BaseModel):
-    """A phrase no pass reached above threshold.
-
-    Rendering these is the graceful-degradation requirement
-    (`ASSESSMENT.md:68`): the console names what it could not resolve and what
-    it did instead, rather than letting a dropped instruction look applied.
-    """
-
-    phrase: str
-    best_guess: str | None
-    confidence: float
-    threshold: float
-    fallback: str
-
-
-class TraceStage(BaseModel):
-    """One named stage of the pipeline, and what it left behind."""
-
-    label: str
-    remaining: int
-    detail: str
-
-
-class PlanTrace(BaseModel):
-    """The console's view of a run.
-
-    A projection of `safety.trace.ProvenanceTrace`, not a replacement for it —
-    that model stays the audit artifact, carrying the PROV-O header, the graph
-    fingerprint and all fifty verdicts. This is the same run shaped for a
-    coach and for the Traces tab.
-    """
-
-    run_id: str
-    generated_at: datetime
-    catalogue_total: int
-    eligible: int
-    prescribed: int
-    stages: list[TraceStage]
-    resolved: list[ResolvedConcept]
-    unresolved: list[UnresolvedPhrase]
-    filtered: list[FilteredExercise]
-
-
-class PlanPayload(BaseModel):
-    """A generated session, as the console consumes it."""
-
-    run_id: str
-    parent_run_id: str | None
-    prompt: str
-    """This run's own utterance, not the accumulated trail."""
-
-    prompt_trail: list[str] = []
-    """Every utterance this plan was built from, oldest first, ending in
-    `prompt`.
-
-    A refinement composes onto its parent rather than replacing it, so the
-    session on screen answers to more than the last thing typed. Showing only
-    the last one made an adjusted plan look like it had forgotten the request
-    it was still honouring."""
-
-    title: str
-    day_label: str
-    requested_minutes: int
-    estimated_minutes: float
-    exercises: list[PlanExercise]
-    trace: PlanTrace
+from agents.workout_generator.agent import Usage, WorkoutPlan
+from agents.workout_generator.deps import ProvenanceEvent, ProvenanceKind
+from catalog.eligibility import Exclusion
+from constraints.models import Constraint
 
 
 class PlanRequest(BaseModel):
-    """What the builder submits.
+    """What the coach asks for."""
 
-    `disabled` carries `ConstraintItem.id`s the coach switched off. It can
-    never contain an injury: the server loads injuries from the member id, and
-    `constraints.compose` refuses to drop one whatever this array says — the
-    guarantee is in the type system rather than checked at the route.
-    """
-
-    prompt: str = ""
-    duration_min: int = Field(default=50, ge=5, le=240)
-    disabled: list[str] = Field(default_factory=list)
+    prompt: str = Field(min_length=1)
+    duration_min: int = Field(default=45, ge=15, le=240)
 
 
-class Eligibility(BaseModel):
-    """The live count behind the builder's "18 of 50"."""
+class ClinicalRule(BaseModel):
+    """One chart-derived constraint, with its traversal rendered."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    effect: str
+    reason: str
+    evidence: str
+
+
+class ResolutionRecord(BaseModel):
+    """One resolve_concept decision."""
+
+    model_config = ConfigDict(frozen=True)
+
+    query: str
+    concept: str | None
+    method: str | None
+    confidence: float | None
+    alternatives: tuple[str, ...]
+
+
+class DeclaredConstraint(BaseModel):
+    """One constraint as the coach declared it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    effect: str
+    reason: str
+
+
+class DeclarationRecord(BaseModel):
+    """One declare_constraints call, as its diff."""
+
+    model_config = ConfigDict(frozen=True)
+
+    added: tuple[DeclaredConstraint, ...]
+    removed: tuple[DeclaredConstraint, ...]
+    unchanged: tuple[DeclaredConstraint, ...]
+    rejected_targets: tuple[str, ...]
+
+
+class ExclusionRecord(BaseModel):
+    """One reason one exercise was not plannable."""
+
+    model_config = ConfigDict(frozen=True)
+
+    concept_id: str
+    cause: str
+    matched_target: str
+    reason: str
+    evidence: str | None
+
+
+class RetrievalRecord(BaseModel):
+    """The latest get_eligible_exercises outcome."""
+
+    model_config = ConfigDict(frozen=True)
+
+    eligible_count: int
+    exclusions: tuple[ExclusionRecord, ...]
+    unmatched_requires: tuple[str, ...]
+
+
+class PlanProvenance(BaseModel):
+    """Every decision behind the plan, projected from the run's tool log."""
+
+    model_config = ConfigDict(frozen=True)
+
+    clinical: tuple[ClinicalRule, ...]
+    resolutions: tuple[ResolutionRecord, ...]
+    declarations: tuple[DeclarationRecord, ...]
+    retrieval: RetrievalRecord | None
+    usage: Usage
+
+
+class PlanResponse(BaseModel):
+    """The wire contract for one generated or adjusted plan."""
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    parent_run_id: str | None
+    member_id: str
+    prompt: str
+    duration_min: int
+    plan: WorkoutPlan
+    provenance: PlanProvenance
+
+
+class EligibilityResponse(BaseModel):
+    """How the catalog stands for this member before any coach directive."""
+
+    model_config = ConfigDict(frozen=True)
 
     total: int
-    available: int
-    excluded_by: dict[FilterCause, int]
+    eligible: int
+    blocked: int
+    cautioned: int
+    disliked: int
+
+
+def _declared(constraints: tuple[Constraint, ...]) -> tuple[DeclaredConstraint, ...]:
+    return tuple(
+        DeclaredConstraint(target=c.target, effect=c.effect.value, reason=c.reason)
+        for c in constraints
+    )
+
+
+def _exclusions(records: tuple[Exclusion, ...]) -> tuple[ExclusionRecord, ...]:
+    return tuple(
+        ExclusionRecord(
+            concept_id=x.concept_id,
+            cause=x.cause.value,
+            matched_target=x.matched_target,
+            reason=x.reason,
+            evidence=x.evidence.render() if x.evidence else None,
+        )
+        for x in records
+    )
+
+
+def build_provenance(tool_log: list[ProvenanceEvent], usage: Usage) -> PlanProvenance:
+    """Project one run's tool log onto the wire shape.
+
+    Args:
+        tool_log: The run's provenance events, in order.
+        usage: What the run cost.
+
+    Returns:
+        The typed provenance: clinical envelope, every resolution and
+        declaration, and the latest retrieval outcome.
+    """
+    clinical: tuple[ClinicalRule, ...] = ()
+    resolutions: list[ResolutionRecord] = []
+    declarations: list[DeclarationRecord] = []
+    retrieval: RetrievalRecord | None = None
+
+    for event in tool_log:
+        if event.kind is ProvenanceKind.CLINICAL_ENVELOPE and event.constraint_set:
+            clinical = tuple(
+                ClinicalRule(
+                    target=c.target,
+                    effect=c.effect.value,
+                    reason=c.reason,
+                    evidence=c.evidence.render() if c.evidence else "",
+                )
+                for c in event.constraint_set.constraints
+            )
+        elif event.kind is ProvenanceKind.CONCEPT_RESOLUTION:
+            resolutions.append(
+                ResolutionRecord(
+                    query=event.query or "",
+                    concept=event.concept,
+                    method=event.method.value if event.method else None,
+                    confidence=event.confidence,
+                    alternatives=event.alternatives,
+                )
+            )
+        elif event.kind is ProvenanceKind.CONSTRAINT_DECLARATION:
+            diff = event.constraint_diff
+            declarations.append(
+                DeclarationRecord(
+                    added=_declared(diff.added) if diff else (),
+                    removed=_declared(diff.removed) if diff else (),
+                    unchanged=_declared(diff.unchanged) if diff else (),
+                    rejected_targets=event.rejected_targets,
+                )
+            )
+        elif event.kind is ProvenanceKind.CANDIDATE_RETRIEVAL:
+            retrieval = RetrievalRecord(
+                eligible_count=len(event.candidates),
+                exclusions=_exclusions(event.exclusions),
+                unmatched_requires=event.unmatched_requires,
+            )
+
+    return PlanProvenance(
+        clinical=clinical,
+        resolutions=tuple(resolutions),
+        declarations=tuple(declarations),
+        retrieval=retrieval,
+        usage=usage,
+    )

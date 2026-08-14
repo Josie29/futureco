@@ -89,11 +89,6 @@ class Settings(BaseSettings):
         return self.data_dir / "authored" / "aliases.json"
 
     @property
-    def resolver_cases_path(self) -> Path:
-        """Path to the labelled cases that calibrate and test the resolver."""
-        return self.data_dir / "authored" / "resolver_cases.json"
-
-    @property
     def extraction_cases_path(self) -> Path:
         """Path to the labelled cases that stand in for, and measure, the model."""
         return self.data_dir / "authored" / "extraction_cases.json"

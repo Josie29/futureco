@@ -6,12 +6,11 @@ import type {
   MemberContext,
   MemberMessage,
   PlanRequest,
+  PlanResponse,
   RosterEntry,
   RunTrace,
   RunTraceSummary,
-  WorkoutPlan,
 } from "@/types"
-import { ConstraintKind } from "@/types"
 
 /**
  * The API surface, one function per documented endpoint.
@@ -98,11 +97,6 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
-/** Injury items are never honoured, whatever the client sends. */
-function dropInjuries(disabled: string[]): string[] {
-  return disabled.filter((id) => !id.startsWith(`${ConstraintKind.INJURIES}:`))
-}
-
 /** The sign-in list. The one call made before there is a coach to send. */
 export async function getCoaches(): Promise<Coach[]> {
   return request<Coach[]>("/api/coaches", undefined, true)
@@ -123,28 +117,16 @@ export async function getMember(memberId: string): Promise<MemberContext> {
   return request<MemberContext>(`/api/members/${encodeURIComponent(memberId)}`)
 }
 
-/**
- * The standing eligible pool.
- *
- * `disabled` can never switch off an injury. The API loads injuries from the
- * member id and applies them unconditionally — there is no field the client
- * can send to turn them off, for the same reason the agent's tools don't
- * expose one. Stripped here too, so the rule holds on both sides.
- */
-export async function getEligibility(memberId: string, disabled: string[]): Promise<Eligibility> {
-  const query = dropInjuries(disabled)
-    .map((id) => `disabled=${encodeURIComponent(id)}`)
-    .join("&")
-  return request<Eligibility>(
-    `/api/members/${encodeURIComponent(memberId)}/eligibility${query ? `?${query}` : ""}`,
-  )
+/** How the catalog stands for this member: clinical blocks, cautions, dislikes. */
+export async function getEligibility(memberId: string): Promise<Eligibility> {
+  return request<Eligibility>(`/api/members/${encodeURIComponent(memberId)}/eligibility`)
 }
 
-export async function createPlan(memberId: string, body: PlanRequest): Promise<WorkoutPlan> {
+export async function createPlan(memberId: string, body: PlanRequest): Promise<PlanResponse> {
   if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  return request<WorkoutPlan>(`/api/members/${encodeURIComponent(memberId)}/plans`, {
+  return request<PlanResponse>(`/api/members/${encodeURIComponent(memberId)}/plans`, {
     method: "POST",
-    body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }),
+    body: JSON.stringify(body),
   })
 }
 
@@ -158,11 +140,11 @@ export async function adjustPlan(
   memberId: string,
   runId: string,
   body: PlanRequest,
-): Promise<WorkoutPlan> {
+): Promise<PlanResponse> {
   if (!body.prompt.trim()) throw new ApiError("A prompt is required", 422)
-  return request<WorkoutPlan>(
+  return request<PlanResponse>(
     `/api/members/${encodeURIComponent(memberId)}/plans/${encodeURIComponent(runId)}/adjust`,
-    { method: "POST", body: JSON.stringify({ ...body, disabled: dropInjuries(body.disabled) }) },
+    { method: "POST", body: JSON.stringify(body) },
   )
 }
 

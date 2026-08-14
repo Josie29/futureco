@@ -8,7 +8,6 @@
 // graph vocabulary is declared alongside the inspector's types. Both mirror
 // `backend/src/graph/schema.py`; declaring them twice would let them drift.
 export { NodeLabel, RelType } from "@/types/graph"
-import type { NodeLabel, RelType } from "@/types/graph"
 
 /** Why an exercise did or didn't make the plan. One hue, three intensities. */
 export enum Verdict {
@@ -21,14 +20,6 @@ export enum Verdict {
 }
 
 /** What caused an exercise to be filtered out. Drives the trace grouping. */
-export enum FilterCause {
-  INJURY = "injury",
-  EQUIPMENT = "equipment",
-  DISLIKE = "dislike",
-  EXCLUSION = "exclusion",
-  OUT_OF_SCOPE = "out_of_scope",
-}
-
 /**
  * Constraint classes applied to every generation. These are fixed categories
  * rather than one member's facts — each maps to an edge type in the member
@@ -53,12 +44,6 @@ export enum ConstraintEffect {
   POOL = "pool",
   /** Reorders the pool without removing anything from it. */
   RANKING = "ranking",
-}
-
-export enum PlanBlock {
-  WARMUP = "warmup",
-  MAIN = "main",
-  COOLDOWN = "cooldown",
 }
 
 /**
@@ -236,256 +221,115 @@ export interface MemberContext {
   constraints: Constraint[]
 }
 
-/** The standing eligible pool for a member, before any request narrows it. */
+/** How the catalog stands for this member before any coach directive. */
 export interface Eligibility {
   total: number
-  available: number
-  excluded_by: Record<FilterCause, number>
-}
-
-/** A muscle this exercise trains, and why it is worth pointing at. */
-export interface MuscleTag {
-  name: string
-  /** Whether one of the member's standing goals targets it. */
-  is_goal_target: boolean
-  /**
-   * Whether this request asked to emphasise it. Independent of the above — a
-   * muscle can be both, and the sheet renders the emphasis, because that is
-   * what put the movement on it.
-   */
-  is_focus: boolean
-}
-
-/**
- * Why the graph treated one movement the way it did.
- *
- * Mirrors `SignalKind` in `backend/src/safety/evidence.py`, whose six members
- * are all reasons to drop or down-rank — the safety filter's whole job. The
- * positive kinds above them are what the plan endpoint has to add, so that
- * `PlanExercise.why` is *derived* from the same evidence stream as
- * `ProvenanceTrace.filtered` rather than authored per exercise. That is the
- * maintainability claim: a new reason is one member here and one template
- * server-side, never a new sentence per movement.
- *
- * Values match the Python enum exactly, so the wire form needs no mapping.
- */
-export enum ReasonKind {
-  // The six `SignalKind` already emits, in its own declaration order, so the
-  // two enums diff cleanly against each other.
-  CONTRAINDICATION = "contraindication",
-  MISSING_EQUIPMENT = "missing_equipment",
-  DISLIKE = "dislike",
-  COACH_EXCLUSION = "coach_exclusion",
-  CAUTION = "caution",
-  FLAGGED_STRUCTURE = "flagged_structure",
-
-  // Positive evidence, which the filter has no reason to emit — it exists to
-  // remove things. These are the plan endpoint's to add.
-  /** No contraindicated pattern reaches this movement. The safety claim. */
-  CLEARED = "cleared",
-  /** It trains a muscle one of her goals targets. */
-  GOAL_SERVICE = "goal_service",
-  /** It reaches a concept the coach's prompt resolved to. */
-  FOCUS_MATCH = "focus_match",
-  /** Every piece of equipment it needs is equipment she has. */
-  EQUIPMENT_FIT = "equipment_fit",
-  /** Why it sits in this block — a warm-up is built from mobility patterns. */
-  PATTERN_ROLE = "pattern_role",
-  /** It stands in for a movement that was dropped (ASSESSMENT.md:31). */
-  SUBSTITUTION = "substitution",
-}
-
-/**
- * One step of a traversal. Mirrors `Hop`.
- *
- * Forward-only, as the Python model is. Where the real edge runs the other way
- * the backend renders the far end as `(this)` — see `_anatomy_signals`, which
- * walks `part_of` down to a joint and then names the exercise stressing it.
- * Adding a direction field is a change to `safety/evidence.py` first, not here.
- */
-export interface PathHop {
-  rel: RelType
-  to_label: NodeLabel
-  to_name: string
-}
-
-/**
- * Where a reason came from, as the path actually walked. Mirrors `EvidencePath`.
- *
- * Structured rather than a pre-rendered arrow string, so one payload serves two
- * presentations — the plan sheet's collapsed traversal and the Traces tab's
- * mono line — instead of the backend choosing a rendering and baking it into
- * the data. `lib/provenance.renderPath` is the TS twin of `EvidencePath.render`.
- */
-export interface EvidencePath {
-  /** Where the walk started: an exercise, an injury, a goal. */
-  entry: string
-  /** Empty for a reason that needed no traversal, e.g. a coach's exclusion. */
-  hops: PathHop[]
-}
-
-/**
- * One piece of evidence about one movement. Mirrors `Signal` field for field,
- * so `Signal.model_dump()` is already this shape and needs no mapping layer.
- *
- * `detail` is composed server-side from a per-kind template over the path's own
- * values — the pattern `policy._headline` already establishes, where every
- * clause is authored text, a fact from the graph, or a fixed connective, and
- * nothing is generated. The console renders `detail`; `path` opens behind a
- * second disclosure and is what satisfies "which graph path justified it"
- * (ASSESSMENT.md:33) without putting edge syntax in a coach's default view.
- */
-export interface Reason {
-  kind: ReasonKind
-  /**
-   * The authored rationale where one exists, otherwise the specific fact.
-   * Reads as a clause, because `Verdict.headline` composes several of these
-   * into the one-liner — so a plan sheet renders them as a list, not prose.
-   */
-  detail: string
-  path: EvidencePath
-  /**
-   * Context that explains without scoring. The only place `affects` surfaces:
-   * it names the injury recorded at a flagged joint without changing a weight.
-   */
-  annotation: string | null
-}
-
-export interface PlanExercise {
-  id: string
-  name: string
-  block: PlanBlock
-  sets: number | null
-  reps: number | null
-  duration_sec: number | null
-  rest_sec: number | null
-  /** True when the catalogue pairs this movement left/right. */
-  per_side: boolean
-  /** Derived from rep duration, sets, reps, rest — and sides. */
-  minutes: number
-  muscles: MuscleTag[]
-  equipment: string[]
-  verdict: Verdict
-  /** One plain sentence, or null when nothing needs the coach's attention. */
-  note: string | null
-  /**
-   * Why this movement is in the plan. Never empty — every prescribed movement
-   * carries at least its `CLEARED` reason, which is the one claim always true
-   * of something the safety filter let through. Without that floor, a clear
-   * off-goal movement would resolve to an empty list.
-   */
-  why: Reason[]
-}
-
-export interface FilteredExercise {
-  id: string
-  name: string
-  /**
-   * The bucket the dropped list groups under. Coarser than `ReasonKind` on
-   * purpose — a coach reads five groups, not twelve. The seam is deliberate
-   * and needs a mapping server-side, from the excluding signal a removal was
-   * attributed to (`Verdict.attributed_to`) onto one of these.
-   */
-  cause: FilterCause
-  /** The offending values — "barbell · plate · rack", "plyometric". */
-  detail: string
-  /**
-   * The traversal that removed it. Same shape as a `Reason`'s, because it is
-   * the same `Signal` on the backend — only the sign differs. Rendering one as
-   * structure and the other as a string would make the API compose prose for
-   * half its own output.
-   */
-  path: EvidencePath
-}
-
-/** A phrase the resolver matched onto a canonical concept. */
-export interface ResolvedConcept {
-  phrase: string
-  label: ConceptLabel
-  concept_id: string
-  concept_name: string
-  pass: ResolutionPass
-  /** 0–1. Compared against the pass's committed threshold. */
-  confidence: number
-  intent: ConceptIntent
-  /** "left" / "right" when the phrase carried laterality, else null. */
-  side: string | null
-}
-
-/**
- * A phrase no pass reached above threshold.
- *
- * Rendering these is the graceful-degradation requirement (ASSESSMENT.md:68) —
- * the console names what it could not resolve and what it did instead.
- */
-export interface UnresolvedPhrase {
-  phrase: string
-  /** Nearest concept considered, or null when nothing scored at all. */
-  best_guess: string | null
-  /** Score of that best guess, for comparison against the threshold. */
-  confidence: number
-  threshold: number
-  /** What the system did instead. Never "nothing". */
-  fallback: string
-}
-
-/** One named stage of the generation pipeline, with what it did. */
-export interface TraceStage {
-  label: string
-  /** Movements remaining after this stage. */
-  remaining: number
-  detail: string
-}
-
-export interface ProvenanceTrace {
-  run_id: string
-  generated_at: string
-  catalogue_total: number
-  /** Survivors of the standing constraints, before the request narrows. */
   eligible: number
-  /** How many made the final plan. */
-  prescribed: number
-  stages: TraceStage[]
-  resolved: ResolvedConcept[]
-  unresolved: UnresolvedPhrase[]
-  /** Every dropped movement, not a sample. Counts must reconcile. */
-  filtered: FilteredExercise[]
+  blocked: number
+  cautioned: number
+  disliked: number
 }
 
-export interface WorkoutPlan {
-  run_id: string
-  /** Set when this run adjusts an earlier one. Adjustments are new runs. */
-  parent_run_id: string | null
-  /** This run's own utterance — the last thing the coach typed. */
-  prompt: string
+/** One slot of the generated plan, exactly as the agent produced it. */
+export interface PlannedExercise {
+  concept_id: string
+  label: string
+  sets: number
+  /** A prescription the coach reads: "8-10", "30s", "5 per side". */
+  reps: string
+  /** Whole-session cost of this slot including its rest. */
+  seconds: number
+  rationale: string
   /**
-   * Every utterance this plan was built from, oldest first, ending in
-   * `prompt`.
-   *
-   * An adjustment composes onto its parent's instructions rather than
-   * replacing them, so a refined plan is still honouring what was asked three
-   * refinements ago. Rendering only `prompt` made it look like it had
-   * forgotten.
+   * Present exactly when this exercise carries a clinical caution: one
+   * sentence on how the prescription respects it. An acknowledgment, not a
+   * clearance.
    */
-  prompt_trail: string[]
+  caution_note: string
+}
+
+/** The agent's plan: three sections, structurally. */
+export interface AgentPlan {
   title: string
-  day_label: string
-  requested_minutes: number
-  estimated_minutes: number
-  exercises: PlanExercise[]
-  trace: ProvenanceTrace
+  total_seconds: number
+  warmup: PlannedExercise[]
+  main: PlannedExercise[]
+  cooldown: PlannedExercise[]
+  coach_notes: string
+}
+
+/** One chart-derived constraint, with its graph traversal rendered. */
+export interface ClinicalRule {
+  target: string
+  effect: string
+  reason: string
+  evidence: string
+}
+
+export interface ResolutionRecord {
+  query: string
+  concept: string | null
+  method: string | null
+  confidence: number | null
+  alternatives: string[]
+}
+
+export interface DeclaredConstraint {
+  target: string
+  effect: string
+  reason: string
+}
+
+export interface DeclarationRecord {
+  added: DeclaredConstraint[]
+  removed: DeclaredConstraint[]
+  unchanged: DeclaredConstraint[]
+  rejected_targets: string[]
+}
+
+export interface ExclusionRecord {
+  concept_id: string
+  cause: string
+  matched_target: string
+  reason: string
+  evidence: string | null
+}
+
+export interface RetrievalRecord {
+  eligible_count: number
+  exclusions: ExclusionRecord[]
+  unmatched_requires: string[]
+}
+
+export interface Usage {
+  llm_calls: number
+  tokens_in: number
+  tokens_out: number
+}
+
+/** Every decision behind the plan, projected from the run's tool log. */
+export interface PlanProvenance {
+  clinical: ClinicalRule[]
+  resolutions: ResolutionRecord[]
+  declarations: DeclarationRecord[]
+  retrieval: RetrievalRecord | null
+  usage: Usage
+}
+
+/** The wire contract for one generated or adjusted plan. */
+export interface PlanResponse {
+  run_id: string
+  parent_run_id: string | null
+  member_id: string
+  prompt: string
+  duration_min: number
+  plan: AgentPlan
+  provenance: PlanProvenance
 }
 
 export interface PlanRequest {
-  /** Required and unconstrained — the mandated input (ASSESSMENT.md:23). */
   prompt: string
   duration_min: number
-  /**
-   * `ConstraintItem.id`s switched off for this run. Never an injury item —
-   * the server loads injuries from the member id and applies them whatever
-   * this array says.
-   */
-  disabled: string[]
 }
 
 export interface ChatAttachment {

@@ -1,12 +1,10 @@
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import Driver, Session
 
-from agent.client import build_extractor
-from agent.extract import Extractor
 from api.console import mount_console
 from api.errors import register_error_handlers
 from api.routes import copilot as copilot_routes
@@ -17,41 +15,32 @@ from api.runs import InMemoryPlanRunStore, PlanRunStore
 from api.traces import InMemoryTraceStore, TraceStore
 from graph.build.report import BuildReport, read_report
 from graph.driver import open_driver
-from graph.schema import NodeLabel
-from resolve.resolver import Resolution, Resolver
-from resolve.vocabulary import Vocabulary
+from resolver.index import ConceptIndex
 from settings import settings
 
 
 class Runtime:
     """Everything the API builds once and reuses for every request.
 
-    The embedder is the reason this exists. Loading the ONNX model and
-    embedding all 164 concepts costs about a second, and paying that per
-    request would spend the whole latency budget before any work started.
+    Thinner than it was: the resolver and its embedder left with the
+    deterministic generator and return as part of the planning agent's tool
+    layer, which will hang its own long-lived state here.
     """
 
     def __init__(
         self,
         driver: Driver,
-        resolver: Resolver,
         report: BuildReport,
-        extractor: Extractor,
-        live_extraction: bool,
+        concept_index: ConceptIndex,
         traces: TraceStore,
         plan_runs: PlanRunStore,
         durable: bool,
     ) -> None:
         self.driver = driver
-        self.resolver = resolver
         self.report = report
-        self.extractor = extractor
-        self.live_extraction = live_extraction
-        """False when no API key is configured. Not a degraded mode for the
-        generator: extraction is the entire model surface there, so the plans
-        are the same — they just have to be asked for as instructions rather
-        than as a sentence. The copilot degrades differently, because synthesis
-        *is* its output; it says so on every answer it returns."""
+        self.concept_index = concept_index
+        """The resolver's in-memory index, one per process. The embedder
+        inside stays lazy, so startup does not pay for it."""
 
         self.traces = traces
         """Every run both surfaces have recorded, generator and copilot."""
@@ -69,21 +58,13 @@ class Runtime:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Open the driver, load the vocabulary, and warm the embedder.
-
-    Warming happens here rather than lazily so the first coach request is as
-    fast as the hundredth, and so a container that cannot reach its model fails
-    at startup rather than mid-request.
-    """
+    """Open the driver, snapshot the build report, and pick the stores."""
     driver = open_driver()
     pool = None
     try:
         with driver.session() as session:
-            vocabulary = Vocabulary.load(session, settings.aliases_path)
             report = read_report(session)
-        # Touching the matrix forces the model load and the concept embed now.
-        vocabulary.similarities("warm")
-        extractor, live = build_extractor()
+            concept_index = ConceptIndex.load(session)
 
         if settings.database_url:
             from api.postgres import open_stores
@@ -94,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             traces, plan_runs, durable = InMemoryTraceStore(), InMemoryPlanRunStore(), False
 
         app.state.runtime = Runtime(
-            driver, Resolver(vocabulary), report, extractor, live, traces, plan_runs, durable
+            driver, report, concept_index, traces, plan_runs, durable
         )
         yield
     finally:
@@ -150,37 +131,8 @@ def health(run: Runtime = Depends(runtime), session: Session = Depends(graph)) -
     return {
         "status": "ok",
         "graph": {"nodes": live.node_total, "edges": live.edge_total},
-        "vocabulary": {"concepts": len(run.resolver.vocabulary.concepts)},
-        "extraction": "live" if run.live_extraction else "scripted",
         "storage": "postgres" if run.durable else "memory",
     }
-
-
-@app.get("/api/resolve")
-def resolve(
-    term: str = Query(min_length=1),
-    label: NodeLabel | None = None,
-    run: Runtime = Depends(runtime),
-) -> Resolution:
-    """Resolve one coach phrase onto a canonical concept.
-
-    Exposed on its own because it is the deterministic half of the system a
-    reviewer can exercise without a language model, and because it is what
-    proves the embedding model is present in the image.
-
-    Args:
-        term: What the coach typed.
-        label: Restrict the search to one label, as a call site that knows its
-            own intent would. Omit to search everything resolvable.
-        run: The process-wide runtime.
-
-    Returns:
-        The match and its near-misses, or no match and the reason why. A label
-        with nothing resolvable behind it is not an error — the resolver
-        reports it as `no_pool`, which is the same shape as any other decline.
-    """
-    labels = frozenset({label}) if label else None
-    return run.resolver.resolve(term, labels)
 
 
 # Last, because its catch-all must be matched after every real endpoint.
