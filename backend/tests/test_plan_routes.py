@@ -43,6 +43,7 @@ def fake_generate(monkeypatch):
         return GenerationRun(
             plan=fake_plan(),
             messages_json=json.dumps([]).encode(),
+            new_messages_json=json.dumps([]).encode(),
             usage=Usage(llm_calls=3, tokens_in=100, tokens_out=50),
         )
 
@@ -252,3 +253,109 @@ def test_build_provenance_of_an_empty_log_is_empty() -> None:
     provenance = build_provenance([], Usage(llm_calls=0, tokens_in=0, tokens_out=0))
     assert provenance.clinical == ()
     assert provenance.retrieval is None
+
+
+def eligible_card(**overrides):
+    from catalog.cards import GoalOverlap
+    from catalog.eligibility import EligibleExercise
+
+    base = dict(
+        concept_id="exercise:Kettlebell Goblet Cyclist Squat",
+        name="Kettlebell Goblet Cyclist Squat",
+        patterns=("movement_pattern:lower push - squat",),
+        muscles=("muscle:quads", "muscle:glutes"),
+        equipment_required=("equipment:Kettlebell", "equipment:Slant Board"),
+        missing_equipment=("equipment:Slant Board",),
+        joints=("anatomy:knee",),
+        is_reps=True,
+        is_duration=True,
+        estimated_rep_seconds=3.3,
+        is_bilateral=True,
+        side=None,
+        supports_weight=True,
+        disliked=False,
+        goal_overlap=(
+            GoalOverlap(
+                goal_id="g1", text="Build glute strength", priority=1,
+                muscle="muscle:glutes",
+            ),
+        ),
+    )
+    base.update(overrides)
+    return EligibleExercise(**base)
+
+
+def facts_plan(concept_id: str) -> WorkoutPlan:
+    return WorkoutPlan(
+        title="t",
+        total_seconds=600,
+        main=[
+            PlannedExercise(
+                concept_id=concept_id, label="x", sets=3, reps="8",
+                seconds=600, rationale="r",
+            )
+        ],
+    )
+
+
+def test_exercise_facts_project_the_planned_cards() -> None:
+    """The PlanSheet's tag row is built from this projection — muscles and
+    equipment as display names, the coach's ask and goal alignment marked."""
+    from api.plan_models import build_exercise_facts
+    from catalog.eligibility import EligibilityResult
+
+    result = EligibilityResult(
+        eligible=(eligible_card(preferred_because=("muscle:glutes",)),),
+        excluded=(),
+        unmatched_requires=(),
+    )
+    facts = build_exercise_facts(
+        facts_plan("exercise:Kettlebell Goblet Cyclist Squat"), result
+    )
+    f = facts["exercise:Kettlebell Goblet Cyclist Squat"]
+    assert f.muscles == ("quads", "glutes")
+    assert f.equipment == ("Kettlebell", "Slant Board")
+    assert f.missing_equipment == ("Slant Board",)
+    assert f.from_coach == ("glutes",)
+    assert f.focus_muscles == ("glutes",), "asked for and goal-aligned"
+    assert f.goals[0].muscle == "glutes"
+    assert f.goals[0].goal == "Build glute strength"
+    assert f.disliked is False
+
+
+def test_exercise_facts_skip_an_id_with_no_card() -> None:
+    """A stale or unknown planned id must not invent facts or crash the
+    response projection."""
+    from api.plan_models import build_exercise_facts
+    from catalog.eligibility import EligibilityResult
+
+    result = EligibilityResult(eligible=(), excluded=(), unmatched_requires=())
+    assert build_exercise_facts(facts_plan("exercise:Ghost"), result) == {}
+
+
+@pytest.fixture()
+def fake_generate_real_card(monkeypatch):
+    async def fake(prompt, deps, message_history=None):
+        return GenerationRun(
+            plan=facts_plan("exercise:Kettlebell Goblet Cyclist Squat"),
+            messages_json=json.dumps([]).encode(),
+            new_messages_json=json.dumps([]).encode(),
+            usage=Usage(llm_calls=1, tokens_in=10, tokens_out=5),
+        )
+
+    monkeypatch.setattr("api.routes.plans.generate", fake)
+
+
+def test_response_carries_facts_for_a_real_planned_card(
+    client, fake_generate_real_card
+) -> None:
+    """The console renders tags only if the wire actually ships the facts —
+    this is the end-to-end check that it does, against the live graph."""
+    response = client.post(
+        f"/api/members/{MEMBER}/plans", headers=COACH, json={"prompt": "legs"}
+    )
+    assert response.status_code == 200
+    payload = PlanResponse.model_validate(response.json())
+    facts = payload.exercise_facts["exercise:Kettlebell Goblet Cyclist Squat"]
+    assert facts.muscles, "the card's muscles reach the sheet"
+    assert "Kettlebell" in facts.equipment

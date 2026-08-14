@@ -544,3 +544,72 @@ def test_coach_constraint_schema_cannot_utter_block_or_caution() -> None:
     effect = schema["properties"]["effect"]
     allowed = effect.get("enum") or [effect.get("const")]
     assert set(allowed) == {"avoid", "prefer", "require"}
+
+
+def bare_deps() -> GeneratorDeps:
+    return GeneratorDeps(
+        member_id="m1",
+        duration_min=45,
+        graph=None,  # type: ignore[arg-type]
+        concept_index=None,  # type: ignore[arg-type]
+    )
+
+
+def test_timing_wrapper_stamps_the_events_a_call_appends() -> None:
+    """Without the stamps every tool span sits at offset 0 for 0 ms and the
+    trace waterfall conveys no sequencing at all."""
+    import time
+
+    from agents.workout_generator.belt import _timed
+
+    deps = bare_deps()
+    deps.run_began = time.perf_counter() - 0.05
+
+    def tool(ctx) -> str:
+        time.sleep(0.002)
+        ctx.deps.tool_log.append(ProvenanceEvent(kind=ProvenanceKind.MEMBER_SNAPSHOT))
+        ctx.deps.tool_log.append(ProvenanceEvent(kind=ProvenanceKind.CONCEPT_RESOLUTION))
+        return "ok"
+
+    assert _timed(tool)(SimpleNamespace(deps=deps)) == "ok"
+    assert len(deps.tool_log) == 2
+    for event in deps.tool_log:
+        assert event.started_ms >= 40, "offset measured from the run anchor"
+        assert event.duration_ms >= 1, "duration covers the tool body"
+
+
+def test_timing_wrapper_leaves_earlier_events_alone() -> None:
+    """Re-stamping the whole log would overwrite the clinical envelope's
+    timing with the last tool's."""
+    import time
+
+    from agents.workout_generator.belt import _timed
+
+    deps = bare_deps()
+    deps.run_began = time.perf_counter()
+    deps.tool_log.append(
+        ProvenanceEvent(
+            kind=ProvenanceKind.CLINICAL_ENVELOPE, started_ms=1.0, duration_ms=2.0
+        )
+    )
+
+    def tool(ctx) -> None:
+        ctx.deps.tool_log.append(ProvenanceEvent(kind=ProvenanceKind.MEMBER_SNAPSHOT))
+
+    _timed(tool)(SimpleNamespace(deps=deps))
+    assert deps.tool_log[0].started_ms == 1.0
+    assert deps.tool_log[0].duration_ms == 2.0
+
+
+def test_timing_wrapper_without_anchor_measures_from_the_call() -> None:
+    """A bare-tool test with no generate() run must not stamp offsets in the
+    hours — perf_counter's epoch is arbitrary."""
+    from agents.workout_generator.belt import _timed
+
+    deps = bare_deps()
+
+    def tool(ctx) -> None:
+        ctx.deps.tool_log.append(ProvenanceEvent(kind=ProvenanceKind.MEMBER_SNAPSHOT))
+
+    _timed(tool)(SimpleNamespace(deps=deps))
+    assert deps.tool_log[0].started_ms == 0.0

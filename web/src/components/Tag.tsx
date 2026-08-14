@@ -20,13 +20,16 @@ export function Tag({
   children,
   tone = "muscle",
   className,
+  title,
 }: {
   children: ReactNode
   tone?: "muscle" | "goal" | "focus" | "equipment"
   className?: string
+  title?: string
 }) {
   return (
     <span
+      title={title}
       className={cn(
         "rounded-[2px] px-[0.3125rem] py-px font-mono text-micro whitespace-nowrap",
         tone === "focus" && "bg-cobalt text-card",

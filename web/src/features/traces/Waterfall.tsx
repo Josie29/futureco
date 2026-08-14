@@ -34,7 +34,8 @@ export function Waterfall({
   return (
     <ol className="flex flex-col">
       {children.map((span) => {
-        const left = totalMs > 0 ? (span.started_ms / totalMs) * 100 : 0
+        const raw = totalMs > 0 ? (span.started_ms / totalMs) * 100 : 0
+        const left = Math.min(Math.max(Number.isFinite(raw) ? raw : 0, 0), 98.5)
         const width = totalMs > 0 ? Math.max((span.duration_ms / totalMs) * 100, 1.5) : 0
         const bad = span.status !== SpanStatus.OK
         const selected = span.id === selectedId
@@ -76,7 +77,7 @@ export function Waterfall({
                   bad ? "text-red" : "text-dim",
                 )}
               >
-                {span.duration_ms} ms
+                {Math.round(span.duration_ms)} ms
               </span>
             </button>
           </li>

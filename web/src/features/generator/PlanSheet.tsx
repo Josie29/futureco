@@ -2,8 +2,9 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 
 import { Mark } from "@/components/Mark"
+import { Tag, equipmentLabel } from "@/components/Tag"
 import { cn } from "@/lib/utils"
-import type { ExclusionRecord, PlanResponse, PlannedExercise } from "@/types"
+import type { ExclusionRecord, ExerciseFacts, PlanResponse, PlannedExercise } from "@/types"
 import { Verdict } from "@/types"
 
 const SECTIONS = [
@@ -21,7 +22,71 @@ function conceptName(conceptId: string): string {
   return rest.join(":")
 }
 
-function Slot({ exercise }: { exercise: PlannedExercise }) {
+/**
+ * The slot's chip row. Muscle chips carry the alignment: solid cobalt when the
+ * coach's directives name them, washed cobalt when only a goal does — the
+ * `Tag` tone semantics. Coach-declared targets that aren't muscles or
+ * equipment (patterns, a required exercise) get their own solid chips so the
+ * ask stays visible.
+ */
+function FactTags({ facts }: { facts: ExerciseFacts }) {
+  const fromCoach = new Set(facts.from_coach)
+  const goalTitle = (muscle: string) =>
+    facts.goals
+      .filter((g) => g.muscle === muscle)
+      .map((g) => g.goal)
+      .join("; ")
+  const extraAsks = facts.from_coach.filter(
+    (name) => !facts.muscles.includes(name) && !facts.equipment.includes(name),
+  )
+
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {extraAsks.map((name) => (
+        <Tag key={name} tone="focus">
+          {name.toLowerCase()}
+        </Tag>
+      ))}
+      {facts.muscles.map((muscle) => (
+        <Tag
+          key={muscle}
+          tone={
+            fromCoach.has(muscle)
+              ? "focus"
+              : facts.focus_muscles.includes(muscle)
+                ? "goal"
+                : "muscle"
+          }
+          title={goalTitle(muscle) || undefined}
+        >
+          {muscle.toLowerCase()}
+        </Tag>
+      ))}
+      {facts.equipment.map((name) => (
+        <Tag
+          key={name}
+          tone="equipment"
+          className={facts.missing_equipment.includes(name) ? "line-through" : undefined}
+          title={
+            facts.missing_equipment.includes(name)
+              ? "Not in the member's own equipment — see the rationale"
+              : undefined
+          }
+        >
+          {equipmentLabel(name)}
+        </Tag>
+      ))}
+    </span>
+  )
+}
+
+function Slot({
+  exercise,
+  facts,
+}: {
+  exercise: PlannedExercise
+  facts?: ExerciseFacts
+}) {
   return (
     <li className="border-t border-soft px-3.5 py-2 first:border-t-0">
       <div className="flex items-baseline justify-between gap-3">
@@ -33,6 +98,7 @@ function Slot({ exercise }: { exercise: PlannedExercise }) {
           {exercise.sets} × {exercise.reps} · {minutes(exercise.seconds)}
         </span>
       </div>
+      {facts && <FactTags facts={facts} />}
       <p className="mt-0.5 text-micro text-faint">{exercise.rationale}</p>
       {exercise.caution_note && (
         <p className="mt-1 rounded-[4px] border border-amber-300 bg-amber-50 px-2 py-1 text-micro text-amber-900">
@@ -151,6 +217,8 @@ export function PlanSheet({
   adjusting: boolean
 }) {
   const { plan, provenance } = response
+  const facts = response.exercise_facts ?? {}
+  const hasFacts = Object.keys(facts).length > 0
 
   return (
     <section className="rounded-[4px] border border-line bg-card">
@@ -176,6 +244,22 @@ export function PlanSheet({
         </p>
       </header>
 
+      {hasFacts && (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-soft px-3.5 py-1.5 text-micro text-faint">
+          <span className="font-semibold uppercase tracking-wide">Legend</span>
+          <span className="flex items-center gap-1">
+            <Mark verdict={Verdict.CAUTION} /> caution
+          </span>
+          <Tag tone="focus">coach’s ask</Tag>
+          <Tag tone="goal">goal muscle</Tag>
+          <Tag tone="muscle">muscle</Tag>
+          <Tag tone="equipment">equipment</Tag>
+          <Tag tone="equipment" className="line-through">
+            not owned
+          </Tag>
+        </div>
+      )}
+
       {SECTIONS.map(([key, label]) =>
         plan[key].length > 0 ? (
           <div key={key}>
@@ -184,7 +268,11 @@ export function PlanSheet({
             </p>
             <ul>
               {plan[key].map((exercise) => (
-                <Slot key={exercise.concept_id} exercise={exercise} />
+                <Slot
+                  key={exercise.concept_id}
+                  exercise={exercise}
+                  facts={facts[exercise.concept_id]}
+                />
               ))}
             </ul>
           </div>

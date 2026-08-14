@@ -34,6 +34,11 @@ class ProvenanceEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     kind: ProvenanceKind
+    started_ms: float = 0.0
+    """Offset from the run's start. Stamped by the toolset's timing wrapper
+    after the tool returns — tools themselves never touch the clock."""
+
+    duration_ms: float = 0.0
     query: str | None = None
     namespace: Namespace | None = None
     method: Pass | None = None
@@ -69,6 +74,10 @@ class GeneratorDeps:
     never a query string."""
 
     concept_index: ConceptIndex
+    run_began: float = 0.0
+    """perf_counter at the run's start, set by generate(). The anchor every
+    event's started_ms is measured from."""
+
     tool_log: list[ProvenanceEvent] = field(default_factory=list)
     declared_constraints: ConstraintSet = field(default_factory=ConstraintSet)
     """The coach-declared set in force, replaced wholesale by

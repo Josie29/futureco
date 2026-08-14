@@ -14,6 +14,7 @@ from api.plan_models import (
     EligibilityResponse,
     PlanRequest,
     PlanResponse,
+    build_exercise_facts,
     build_provenance,
 )
 from api.runs import PlanRun
@@ -72,8 +73,18 @@ def _run(
     )
     runtime.traces.record(
         build_generator_trace(
-            run_id, body.prompt, started_at, duration_ms, deps.tool_log, result.usage
+            run_id,
+            body.prompt,
+            started_at,
+            duration_ms,
+            deps.tool_log,
+            list(ModelMessagesTypeAdapter.validate_json(result.new_messages_json)),
+            result.usage,
         )
+    )
+    eligibility = apply(
+        load_cards(session, member_id),
+        compose(load_clinical(session, member_id), deps.declared_constraints),
     )
     return PlanResponse(
         run_id=run_id,
@@ -83,6 +94,7 @@ def _run(
         duration_min=body.duration_min,
         plan=result.plan,
         provenance=build_provenance(deps.tool_log, result.usage),
+        exercise_facts=build_exercise_facts(result.plan, eligibility),
     )
 
 

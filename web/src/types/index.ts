@@ -316,6 +316,27 @@ export interface PlanProvenance {
   usage: Usage
 }
 
+/** A member goal a planned exercise serves, and the muscle they share. */
+export interface GoalTag {
+  goal: string
+  priority: number
+  muscle: string
+}
+
+/** Why one planned exercise fits: the card's facts as display names. */
+export interface ExerciseFacts {
+  muscles: string[]
+  /** Muscles the coach's directives or the member's goals point at. */
+  focus_muscles: string[]
+  equipment: string[]
+  missing_equipment: string[]
+  goals: GoalTag[]
+  /** The declared prefer/require targets this card carries. */
+  from_coach: string[]
+  /** True only for a disliked exercise kept by an exact require. */
+  disliked: boolean
+}
+
 /** The wire contract for one generated or adjusted plan. */
 export interface PlanResponse {
   run_id: string
@@ -325,6 +346,8 @@ export interface PlanResponse {
   duration_min: number
   plan: AgentPlan
   provenance: PlanProvenance
+  /** Per-slot card facts, keyed by the slot's concept_id. */
+  exercise_facts: Record<string, ExerciseFacts>
 }
 
 export interface PlanRequest {

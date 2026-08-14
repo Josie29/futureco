@@ -1,3 +1,4 @@
+import time
 from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -316,6 +317,10 @@ class GenerationRun(BaseModel):
     messages_json: bytes
     """The full pydantic-ai message history, JSON — replayed on adjustment."""
 
+    new_messages_json: bytes
+    """This run's messages only — what the trace derives its LLM-turn spans
+    from. An adjustment's full history would replay the parent's turns."""
+
     usage: Usage
 
 
@@ -334,10 +339,13 @@ async def generate(
     Returns:
         The validated plan, the message history for the next turn, and usage.
     """
+    deps.run_began = time.perf_counter()
     deps.clinical_constraints = load_clinical(deps.graph, deps.member_id)
     deps.tool_log.append(
         ProvenanceEvent(
             kind=ProvenanceKind.CLINICAL_ENVELOPE,
+            started_ms=0.0,
+            duration_ms=round((time.perf_counter() - deps.run_began) * 1000, 2),
             member=deps.member_id,
             constraint_set=deps.clinical_constraints,
         )
@@ -353,6 +361,7 @@ async def generate(
     return GenerationRun(
         plan=result.output,
         messages_json=result.all_messages_json(),
+        new_messages_json=result.new_messages_json(),
         usage=Usage(
             llm_calls=used.requests,
             tokens_in=used.input_tokens or 0,
